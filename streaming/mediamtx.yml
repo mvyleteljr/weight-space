@@ -1,0 +1,23 @@
+# MediaMTX v1.21.3. Publish one RTSP stream per match; share it over HLS.
+logLevel: info
+rtsp: true
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+rtmp: false
+webrtc: false
+srt: false
+moq: false
+api: false
+metrics: false
+playback: false
+hls: true
+hlsAddress: 127.0.0.1:8888
+hlsVariant: fmp4
+hlsAlwaysRemux: true
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s
+hlsSegmentMaxSize: 10M
+paths:
+  "~^match-[a-zA-Z0-9_-]+$":
+    source: publisher
+    overridePublisher: false

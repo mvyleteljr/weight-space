@@ -35,16 +35,15 @@ class Fighter:
             animation_list.append(temp_img_list)
         return animation_list
 
-    def move(self, screen_width, screen_height, target, round_over):
+    def move(self, screen_width, screen_height, target, round_over, keys=None):
         SPEED = 10
         GRAVITY = 2
         dx = 0
         dy = 0
         self.running = False
-        self.attack_type = 0
 
         # get keypresses for human player
-        key = pygame.key.get_pressed()
+        key = pygame.key.get_pressed() if keys is None else keys
 
         # can only perform other actions if not currently attacking
         if self.attacking == False and self.alive == True and round_over == False:

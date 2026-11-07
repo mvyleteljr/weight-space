@@ -1,3 +1,9 @@
+import argparse
+import atexit
+import logging
+import signal
+from pathlib import Path
+from collections import defaultdict
 import math
 import pygame
 from pygame import mixer
@@ -7,17 +13,36 @@ import numpy as np
 import os
 import sys
 from fighter import Fighter
+from streaming import FramePublisher, StreamConfig
+
+parser = argparse.ArgumentParser(description="Two-player Street Fighter with optional HLS broadcast")
+parser.add_argument("--stream", metavar="RTSP_URL", help="Publish video through FFmpeg to MediaMTX")
+parser.add_argument("--stream-fps", type=int, choices=(30, 60), default=30)
+parser.add_argument("--headless", action="store_true", help="Run without a desktop or audio device")
+parser.add_argument("--demo", action="store_true", help="Scripted players for streaming tests (not AI agents)")
+parser.add_argument("--mute", action="store_true", help="Mute local game audio")
+parser.add_argument("--size", metavar="WIDTHxHEIGHT", help="Game window size; defaults to 1280x720 when streaming")
+args = parser.parse_args()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
+if args.headless:
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
+if args.headless or args.mute:
+    os.environ["SDL_AUDIODRIVER"] = "dummy"
+
+
+def shutdown(signum, frame):
+    raise SystemExit(0)
+
+
+signal.signal(signal.SIGTERM, shutdown)
+signal.signal(signal.SIGINT, shutdown)
 
 # Helper Function for Bundled Assets
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        # When running from src directory, look in parent directory for assets
-        if os.path.basename(os.getcwd()) == "src":
-            base_path = os.path.abspath("..")
-        else:
-            base_path = os.path.abspath(".")
+        base_path = str(Path(__file__).resolve().parent.parent)
 
     return os.path.join(base_path, relative_path)
 
@@ -28,6 +53,15 @@ pygame.init()
 info = pygame.display.Info()
 SCREEN_WIDTH = info.current_w
 SCREEN_HEIGHT = info.current_h
+if args.stream or args.headless:
+    SCREEN_WIDTH, SCREEN_HEIGHT = 1280, 720
+if args.size:
+    try:
+        SCREEN_WIDTH, SCREEN_HEIGHT = map(int, args.size.lower().split("x"))
+        if SCREEN_WIDTH < 960 or SCREEN_HEIGHT < 600:
+            raise ValueError
+    except ValueError:
+        parser.error("--size must be WIDTHxHEIGHT, at least 960x600")
 FPS = 60
 ROUND_OVER_COOLDOWN = 3000
 
@@ -43,6 +77,20 @@ GREEN = (0, 255, 0)
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
 pygame.display.set_caption("Street Fighter")
 clock = pygame.time.Clock()
+publisher = None
+if args.stream:
+    try:
+        publisher = FramePublisher(StreamConfig(args.stream, args.stream_fps), screen.get_size())
+    except (ValueError, RuntimeError) as error:
+        parser.error(str(error))
+    atexit.register(publisher.close)
+
+
+def present():
+    pygame.display.update()
+    if publisher:
+        publisher.capture(screen)
+
 
 # Load Assets
 bg_image = cv2.imread(resource_path("assets/images/bg1.jpg"))
@@ -55,6 +103,7 @@ menu_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 50)
 menu_font_title = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 100)  # Larger font for title
 count_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 80)
 score_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 30)
+player_label_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 25)
 
 # Music and Sounds
 pygame.mixer.music.load(resource_path("assets/audio/music.mp3"))
@@ -98,16 +147,17 @@ def blur_bg(image):
     return cv2.cvtColor(blurred_image, cv2.COLOR_BGR2RGB)
 
 
+def background_surface(image):
+    surface = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
+    return pygame.transform.scale(surface, (SCREEN_WIDTH, SCREEN_HEIGHT)).convert()
+
+
+normal_background = background_surface(bg_image)
+menu_background = background_surface(blur_bg(bg_image))
+
+
 def draw_bg(image, is_game_started=False):
-    if not is_game_started:
-        blurred_bg = blur_bg(image)
-        blurred_bg = pygame.surfarray.make_surface(np.transpose(blurred_bg, (1, 0, 2)))
-        blurred_bg = pygame.transform.scale(blurred_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        screen.blit(blurred_bg, (0, 0))
-    else:
-        image = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
-        image = pygame.transform.scale(image, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        screen.blit(image, (0, 0))
+    screen.blit(normal_background if is_game_started else menu_background, (0, 0))
 
 
 def draw_button(text, font, text_col, button_col, x, y, width, height):
@@ -130,7 +180,8 @@ def victory_screen(winner_img):
         screen.blit(winner_img, (SCREEN_WIDTH // 2 - winner_img.get_width() // 2,
                                  SCREEN_HEIGHT // 2 - winner_img.get_height() // 2 + 100))
 
-        pygame.display.update()
+        present()
+        clock.tick(FPS)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -201,7 +252,7 @@ def main_menu():
                     pygame.quit()
                     exit()
 
-        pygame.display.update()
+        present()
         clock.tick(FPS)
 
 
@@ -227,7 +278,7 @@ def scores_screen():
         draw_text(p2_text, score_font_large, BLACK, p2_text_x + shadow_offset, p2_text_y + shadow_offset)  # Shadow
         draw_gradient_text(p2_text, score_font_large, p2_text_x, p2_text_y, [RED, YELLOW])  # Gradient
 
-        return_button = draw_button("RETURN TO MAIN MENU", menu_font, BLACK, GREEN, SCREEN_WIDTH // 2 - 220, 700, 500, 50)
+        return_button = draw_button("RETURN TO MAIN MENU", menu_font, BLACK, GREEN, SCREEN_WIDTH // 2 - 220, SCREEN_HEIGHT - 80, 500, 50)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -237,7 +288,7 @@ def scores_screen():
                 if return_button.collidepoint(event.pos):
                     return
 
-        pygame.display.update()
+        present()
         clock.tick(FPS)
 
 
@@ -279,7 +330,7 @@ def controls_screen():
                 if return_button.collidepoint(event.pos):
                     return
 
-        pygame.display.update()
+        present()
         clock.tick(FPS)
 
 
@@ -309,8 +360,29 @@ def countdown():
 
         draw_text(text, countdown_font, RED, x_pos, SCREEN_HEIGHT // 2 - 50)
 
-        pygame.display.update()
-        pygame.time.delay(1000)
+        present()
+        deadline = pygame.time.get_ticks() + 1000
+        while pygame.time.get_ticks() < deadline:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    raise SystemExit(0)
+            present()
+            clock.tick(FPS)
+
+
+def demo_keys(fighter, target):
+    """Deterministic, inexpensive inputs for exercising the whole video path."""
+    keys = defaultdict(bool)
+    left, right, jump, attack = ((pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_r)
+                                 if fighter.player == 1 else
+                                 (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_l))
+    distance = target.rect.centerx - fighter.rect.centerx
+    if abs(distance) > 90:
+        keys[right if distance > 0 else left] = True
+    tick = pygame.time.get_ticks() + fighter.player * 370
+    keys[attack] = abs(distance) < 160 and tick % 1100 < 600
+    keys[jump] = tick % 2300 < 100
+    return keys
 
 
 def game_loop():
@@ -329,9 +401,11 @@ def game_loop():
         draw_text(f"P2: {score[1]}", score_font, RED, SCREEN_WIDTH - 220, 20)
 
         # Add player identification labels
-        player_label_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 25)
         draw_text("PLAYER 1", player_label_font, BLUE, 20, 85)
         draw_text("PLAYER 2", player_label_font, (255, 100, 0), SCREEN_WIDTH - 220, 85)
+
+        if args.demo:
+            draw_text("SCRIPTED DEMO", score_font, YELLOW, SCREEN_WIDTH // 2 - 100, 95)
 
         draw_health_bar(fighter_1.health, 20, 50)
         draw_health_bar(fighter_2.health, SCREEN_WIDTH - 220, 50)
@@ -339,8 +413,8 @@ def game_loop():
         exit_button = draw_button("MAIN MENU", menu_font, BLACK, YELLOW, SCREEN_WIDTH // 2 - 150, 20, 300, 50)
 
         if not round_over:
-            fighter_1.move(SCREEN_WIDTH, SCREEN_HEIGHT, fighter_2, round_over)
-            fighter_2.move(SCREEN_WIDTH, SCREEN_HEIGHT, fighter_1, round_over)
+            fighter_1.move(SCREEN_WIDTH, SCREEN_HEIGHT, fighter_2, round_over, demo_keys(fighter_1, fighter_2) if args.demo else None)
+            fighter_2.move(SCREEN_WIDTH, SCREEN_HEIGHT, fighter_1, round_over, demo_keys(fighter_2, fighter_1) if args.demo else None)
 
             fighter_1.update()
             fighter_2.update()
@@ -368,12 +442,12 @@ def game_loop():
                 if exit_button.collidepoint(event.pos):
                     return
 
-        pygame.display.update()
+        present()
         clock.tick(FPS)
 
 
 while True:
-    menu_selection = main_menu()
+    menu_selection = "START" if args.demo else main_menu()
 
     if menu_selection == "START":
         game_loop()

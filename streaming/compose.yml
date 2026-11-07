@@ -1,0 +1,21 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      MTX_RTSPADDRESS: :8554
+      MTX_HLSADDRESS: :8888
+    ports:
+      - "127.0.0.1:8554:8554"
+    restart: unless-stopped
+  spectator:
+    image: python:3.12-alpine
+    command: ["python", "/app/server.py", "--bind", "0.0.0.0", "--hls-origin", "http://mediamtx:8888"]
+    volumes:
+      - .:/app:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
