@@ -1,0 +1,380 @@
+{
+  "date": "2026-11-07",
+  "task": "xor-v1",
+  "seed": 0,
+  "local_tests_passed": 10,
+  "agents": [
+    {
+      "name": "Astra",
+      "provider": "codex",
+      "requested_model": "gpt-6-astra",
+      "initial_score": 0.5,
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "2ab26e6dd4baa68f416b38dd80f1cd55852a64ce35604768c87891a0af54d518",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  0,
+                  0
+                ],
+                "weights": [
+                  [
+                    1,
+                    -1
+                  ],
+                  [
+                    -1,
+                    1
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  0
+                ],
+                "weights": [
+                  [
+                    1,
+                    1
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "The hidden layer calculates the positive difference in each direction. The output adds these values. The result is 1 when the inputs differ and 0 when they are equal."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "2ab26e6dd4baa68f416b38dd80f1cd55852a64ce35604768c87891a0af54d518",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  0,
+                  0
+                ],
+                "weights": [
+                  [
+                    1,
+                    -1
+                  ],
+                  [
+                    -1,
+                    1
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  0
+                ],
+                "weights": [
+                  [
+                    1,
+                    1
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "Keep the weights. The hidden layer calculates the positive difference in each direction. The output adds these values. The result is 1 when the inputs are different and 0 when they are equal."
+        }
+      ],
+      "local_run": "runs/astra-smoke"
+    },
+    {
+      "name": "Fable",
+      "provider": "claude",
+      "requested_model": "fable",
+      "initial_score": 0.5,
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "2add04b489776b93fb9b9772585a645f6011a98bec288a6edad2c5b17ac8a78b",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  0.0,
+                  -1.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    1.0,
+                    1.0
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  0.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    -2.0
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "The first layer has two relu units. Unit 1 computes relu(a+b). Unit 2 computes relu(a+b-1). The output layer computes unit1 minus 2 times unit2. For (0,0) the output is 0. For (0,1) and (1,0) the output is 1. For (1,1) the output is 2-2=0. This gives correct XOR for all four cases."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "2add04b489776b93fb9b9772585a645f6011a98bec288a6edad2c5b17ac8a78b",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  0.0,
+                  -1.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    1.0,
+                    1.0
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  0.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    -2.0
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "The current network gives the correct output for all four cases. Score is 1.0. Keep the same weights. Unit 1 computes relu(a+b). Unit 2 computes relu(a+b-1). The output is unit1 minus 2 times unit2. This gives 0, 1, 1, 0 for the four inputs."
+        }
+      ],
+      "local_run": "runs/fable-smoke"
+    },
+    {
+      "name": "GLM",
+      "provider": "tinfoil",
+      "requested_model": "glm-5-3",
+      "initial_score": 0.5,
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "2add04b489776b93fb9b9772585a645f6011a98bec288a6edad2c5b17ac8a78b",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  0.0,
+                  -1.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    1.0,
+                    1.0
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  0.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    -2.0
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "The first layer has two ReLU neurons. Neuron one adds the two inputs. Neuron two gives 1 only when both inputs are 1. The output layer subtracts two times neuron two from neuron one. The output is 1 when the inputs differ. The output is 0 when the inputs are equal. All four cases give the correct action."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "2add04b489776b93fb9b9772585a645f6011a98bec288a6edad2c5b17ac8a78b",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  0.0,
+                  -1.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    1.0
+                  ],
+                  [
+                    1.0,
+                    1.0
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  0.0
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    -2.0
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "The round 1 model gave the correct action for all four cases. The weights do not change. The first layer has two ReLU neurons. Neuron one adds the two inputs. Neuron two gives the value 1 only when both inputs are 1. The output layer combines the two neurons with the weights 1 and -2. The output is 1 when the inputs differ. The output is 0 when the inputs are equal."
+        }
+      ],
+      "local_run": "runs/glm-smoke-02"
+    },
+    {
+      "name": "Kimi K3",
+      "provider": "tinfoil",
+      "requested_model": "kimi-k3",
+      "initial_score": 0.5,
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "e3c84c2fccbb144f39353227cc25608bc83a27725dc9d55f81e48b4591a4ddcc",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  -1.0,
+                  -3.0
+                ],
+                "weights": [
+                  [
+                    2.0,
+                    2.0
+                  ],
+                  [
+                    2.0,
+                    2.0
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  -0.4
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    -4.0
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "Two relu units form ramps. Unit one fires when a or b is 1. Unit two fires only when a and b are 1. The output layer subtracts unit two from unit one. This gives a large value when a and b differ and a small value when they are equal."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "model_sha256": "e3c84c2fccbb144f39353227cc25608bc83a27725dc9d55f81e48b4591a4ddcc",
+          "model": {
+            "input_size": 2,
+            "layers": [
+              {
+                "activation": "relu",
+                "bias": [
+                  -1.0,
+                  -3.0
+                ],
+                "weights": [
+                  [
+                    2.0,
+                    2.0
+                  ],
+                  [
+                    2.0,
+                    2.0
+                  ]
+                ]
+              },
+              {
+                "activation": "linear",
+                "bias": [
+                  -0.4
+                ],
+                "weights": [
+                  [
+                    1.0,
+                    -4.0
+                  ]
+                ]
+              }
+            ],
+            "version": 1
+          },
+          "reason": "The network gives the correct output for all four input pairs. Keep the weights. Unit one fires when a or b is one. Unit two fires only when a and b are one. The output layer subtracts unit two from unit one."
+        }
+      ],
+      "local_run": "runs/kimi-smoke-02"
+    }
+  ]
+}

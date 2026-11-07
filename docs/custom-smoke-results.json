@@ -1,0 +1,368 @@
+{
+  "date": "2026-11-07",
+  "task": "xor-v1",
+  "format": "bundle",
+  "local_tests_passed": 18,
+  "agents": [
+    {
+      "name": "astra",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "bundle_sha256": "95d13095abe77476ed04db1c8754a41c1b14d0ffc187905edb137ae4b6a6c2f0",
+          "code_sha256": "1efdcd6f0088a0867e2921bba7adefd832620b5a58cdf3a088141649390e2ee4",
+          "weights_sha256": "e7c1f1f2eb02a971cde09ff6d72d06fe6c03e205445fcc30420e781e26292db5",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return int(threshold(output[0]))\n",
+            "weights": {
+              "hidden.bias": [
+                0.0,
+                0.0
+              ],
+              "hidden.weight": [
+                [
+                  1.0,
+                  -1.0
+                ],
+                [
+                  -1.0,
+                  1.0
+                ]
+              ],
+              "output.bias": [
+                0.0
+              ],
+              "output.weight": [
+                [
+                  1.0,
+                  1.0
+                ]
+              ]
+            }
+          },
+          "reason": "Set the weights to give output 1 when the input bits differ and output 0 when they are equal. The weights stay fixed."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "bundle_sha256": "95d13095abe77476ed04db1c8754a41c1b14d0ffc187905edb137ae4b6a6c2f0",
+          "code_sha256": "1efdcd6f0088a0867e2921bba7adefd832620b5a58cdf3a088141649390e2ee4",
+          "weights_sha256": "e7c1f1f2eb02a971cde09ff6d72d06fe6c03e205445fcc30420e781e26292db5",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return int(threshold(output[0]))\n",
+            "weights": {
+              "hidden.bias": [
+                0.0,
+                0.0
+              ],
+              "hidden.weight": [
+                [
+                  1.0,
+                  -1.0
+                ],
+                [
+                  -1.0,
+                  1.0
+                ]
+              ],
+              "output.bias": [
+                0.0
+              ],
+              "output.weight": [
+                [
+                  1.0,
+                  1.0
+                ]
+              ]
+            }
+          },
+          "reason": "Keep the model unchanged. It gives the correct action for all four input pairs. The weights stay fixed."
+        }
+      ],
+      "local_run": "runs/astra-custom-smoke"
+    },
+    {
+      "name": "fable",
+      "provider": "claude",
+      "model": "fable",
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 17,
+          "bundle_sha256": "0fb652f75768db48d4bea1b69faa53a9cedd6756b3e5e65dd92c84b71936e0f5",
+          "code_sha256": "dd4041ef7f10064fc2063ccef0fba18317a7f966d5ae237000352b2941ec34d3",
+          "weights_sha256": "6aebfb1d0c56180bb637fb9cb3ba6e53cd4f143e3b8838155dc8bc1e96c7e7c3",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return threshold(output[0])\n",
+            "weights": {
+              "hidden.bias": [
+                0.0,
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "hidden.weight": [
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0
+                ]
+              ],
+              "output.bias": [
+                0.0
+              ],
+              "output.weight": [
+                [
+                  1.0,
+                  -2.0,
+                  0.0,
+                  0.0
+                ]
+              ]
+            }
+          },
+          "reason": "I set the weights of the hidden layer by hand. Unit 1 computes the sum of the two bits. Unit 2 computes the sum minus 1, so it is active only when both bits are 1. The output layer subtracts two times unit 2 from unit 1. The output is 1 when the bits differ and 0 when the bits are equal. The code is not changed."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 17,
+          "bundle_sha256": "0fb652f75768db48d4bea1b69faa53a9cedd6756b3e5e65dd92c84b71936e0f5",
+          "code_sha256": "dd4041ef7f10064fc2063ccef0fba18317a7f966d5ae237000352b2941ec34d3",
+          "weights_sha256": "6aebfb1d0c56180bb637fb9cb3ba6e53cd4f143e3b8838155dc8bc1e96c7e7c3",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return threshold(output[0])\n",
+            "weights": {
+              "hidden.bias": [
+                0.0,
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "hidden.weight": [
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0
+                ]
+              ],
+              "output.bias": [
+                0.0
+              ],
+              "output.weight": [
+                [
+                  1.0,
+                  -2.0,
+                  0.0,
+                  0.0
+                ]
+              ]
+            }
+          },
+          "reason": "The model is correct. The score is 1.0. I do not change the code or the weights."
+        }
+      ],
+      "local_run": "runs/fable-custom-smoke"
+    },
+    {
+      "name": "glm",
+      "provider": "tinfoil",
+      "model": "glm-5-3",
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "bundle_sha256": "2babe6e7509065fefe93e6dc26889f9042c1f83de994b398df8078c7d03c2c95",
+          "code_sha256": "dd4041ef7f10064fc2063ccef0fba18317a7f966d5ae237000352b2941ec34d3",
+          "weights_sha256": "8bc7f8504b4e0ce3688814aca8533646ed507efd5a18e40dfc1572700c1e702f",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return threshold(output[0])\n",
+            "weights": {
+              "hidden.bias": [
+                0.0,
+                -2.0
+              ],
+              "hidden.weight": [
+                [
+                  2.0,
+                  2.0
+                ],
+                [
+                  2.0,
+                  2.0
+                ]
+              ],
+              "output.bias": [
+                -1.0
+              ],
+              "output.weight": [
+                [
+                  2.0,
+                  -4.0
+                ]
+              ]
+            }
+          },
+          "reason": "The code stays unchanged. The old weights gave an output below 0.5 for each input. The new weights compute the XOR function. Hidden unit 1 outputs 2 times the sum of the 2 bits. Hidden unit 2 outputs 2 when both bits are 1 and 0 for the other 3 inputs. The output layer computes 2 times unit 1 minus 4 times unit 2 minus 1. The output is 3 when the bits differ. The output is -1 when the bits are equal. The threshold at 0.5 converts the output to the correct action."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "bundle_sha256": "2babe6e7509065fefe93e6dc26889f9042c1f83de994b398df8078c7d03c2c95",
+          "code_sha256": "dd4041ef7f10064fc2063ccef0fba18317a7f966d5ae237000352b2941ec34d3",
+          "weights_sha256": "8bc7f8504b4e0ce3688814aca8533646ed507efd5a18e40dfc1572700c1e702f",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return threshold(output[0])\n",
+            "weights": {
+              "hidden.bias": [
+                0.0,
+                -2.0
+              ],
+              "hidden.weight": [
+                [
+                  2.0,
+                  2.0
+                ],
+                [
+                  2.0,
+                  2.0
+                ]
+              ],
+              "output.bias": [
+                -1.0
+              ],
+              "output.weight": [
+                [
+                  2.0,
+                  -4.0
+                ]
+              ]
+            }
+          },
+          "reason": "The last evaluation gave a score of 1.0. All four input pairs gave the correct action. The network computes the XOR function. The code and the weights stay the same."
+        }
+      ],
+      "local_run": "runs/glm-custom-smoke"
+    },
+    {
+      "name": "kimi",
+      "provider": "tinfoil",
+      "model": "kimi-k3",
+      "rounds": [
+        {
+          "round": 1,
+          "score": 1.0,
+          "parameters": 9,
+          "bundle_sha256": "6f7d1a17601d711f11c880b5d793e8ab073cf8fbd397f5164a1fede6e2d458a1",
+          "code_sha256": "1efdcd6f0088a0867e2921bba7adefd832620b5a58cdf3a088141649390e2ee4",
+          "weights_sha256": "89c80d368728062c727ee10c38413682d493d074653e6ef256cbb4d658cfc730",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return int(threshold(output[0]))\n",
+            "weights": {
+              "hidden.bias": [
+                -1.0,
+                -3.0
+              ],
+              "hidden.weight": [
+                [
+                  2.0,
+                  2.0
+                ],
+                [
+                  2.0,
+                  2.0
+                ]
+              ],
+              "output.bias": [
+                0.0
+              ],
+              "output.weight": [
+                [
+                  1.0,
+                  -4.0
+                ]
+              ]
+            }
+          },
+          "reason": "The new weights make two hidden units. One unit finds one active input. One unit finds two active inputs. The output unit subtracts the second unit. The result is 1 for different bits and 0 for equal bits."
+        },
+        {
+          "round": 2,
+          "score": 1.0,
+          "parameters": 9,
+          "bundle_sha256": "6f7d1a17601d711f11c880b5d793e8ab073cf8fbd397f5164a1fede6e2d458a1",
+          "code_sha256": "1efdcd6f0088a0867e2921bba7adefd832620b5a58cdf3a088141649390e2ee4",
+          "weights_sha256": "89c80d368728062c727ee10c38413682d493d074653e6ef256cbb4d658cfc730",
+          "model": {
+            "version": 1,
+            "code": "from weight_space.model import BaseModel\nfrom weight_space.ops import dense, relu, threshold\n\n\nclass Model(BaseModel):\n    def act(self, observation):\n        hidden = relu(dense(observation, self.weights[\"hidden.weight\"], self.weights[\"hidden.bias\"]))\n        output = dense(hidden, self.weights[\"output.weight\"], self.weights[\"output.bias\"])\n        return int(threshold(output[0]))\n",
+            "weights": {
+              "hidden.bias": [
+                -1.0,
+                -3.0
+              ],
+              "hidden.weight": [
+                [
+                  2.0,
+                  2.0
+                ],
+                [
+                  2.0,
+                  2.0
+                ]
+              ],
+              "output.bias": [
+                0.0
+              ],
+              "output.weight": [
+                [
+                  1.0,
+                  -4.0
+                ]
+              ]
+            }
+          },
+          "reason": "The model gives the correct action for the four input pairs. The score is 1.0. No change is necessary. Keep the code and the weights."
+        }
+      ],
+      "local_run": "runs/kimi-custom-smoke"
+    }
+  ]
+}

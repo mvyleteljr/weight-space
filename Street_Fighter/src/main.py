@@ -2,89 +2,88 @@ import math
 import pygame
 from pygame import mixer
 from pygame import font
-import cv2
-import numpy as np
-import os
 import sys
-from fighter import Fighter
+from pathlib import Path
+
+if __package__:
+    from .fighter import Fighter
+    from .arena import Arena, encode_action
+else:
+    from fighter import Fighter
+    from arena import Arena, encode_action
 
 # Helper Function for Bundled Assets
 def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        # When running from src directory, look in parent directory for assets
-        if os.path.basename(os.getcwd()) == "src":
-            base_path = os.path.abspath("..")
-        else:
-            base_path = os.path.abspath(".")
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    return str(base / relative_path)
 
-    return os.path.join(base_path, relative_path)
 
-mixer.init()
-pygame.init()
+if __name__ == "__main__":
+    mixer.init()
+    pygame.init()
 
-# Constants
-info = pygame.display.Info()
-SCREEN_WIDTH = info.current_w
-SCREEN_HEIGHT = info.current_h
-FPS = 60
-ROUND_OVER_COOLDOWN = 3000
+    # Constants
+    info = pygame.display.Info()
+    SCREEN_WIDTH = info.current_w
+    SCREEN_HEIGHT = info.current_h
+    FPS = 60
+    ROUND_OVER_COOLDOWN = 3000
 
-# Colors
-RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-BLUE = (0, 0, 255)
-GREEN = (0, 255, 0)
+    # Colors
+    RED = (255, 0, 0)
+    YELLOW = (255, 255, 0)
+    WHITE = (255, 255, 255)
+    BLACK = (0, 0, 0)
+    BLUE = (0, 0, 255)
+    GREEN = (0, 255, 0)
 
-# Initialize Game Window
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
-pygame.display.set_caption("Street Fighter")
-clock = pygame.time.Clock()
+    # Initialize Game Window
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
+    pygame.display.set_caption("Street Fighter")
+    clock = pygame.time.Clock()
 
-# Load Assets
-bg_image = cv2.imread(resource_path("assets/images/bg1.jpg"))
-victory_img = pygame.image.load(resource_path("assets/images/victory.png")).convert_alpha()
-warrior_victory_img = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
-wizard_victory_img = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
+    # Load Assets
+    bg_image = pygame.image.load(resource_path("assets/images/bg1.jpg")).convert()
+    victory_img = pygame.image.load(resource_path("assets/images/victory.png")).convert_alpha()
+    warrior_victory_img = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
+    wizard_victory_img = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
 
-# Fonts
-menu_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 50)
-menu_font_title = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 100)  # Larger font for title
-count_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 80)
-score_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 30)
+    # Fonts
+    menu_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 50)
+    menu_font_title = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 100)  # Larger font for title
+    count_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 80)
+    score_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 30)
 
-# Music and Sounds
-pygame.mixer.music.load(resource_path("assets/audio/music.mp3"))
-pygame.mixer.music.set_volume(0.5)
-pygame.mixer.music.play(-1, 0.0, 5000)
-sword_fx = pygame.mixer.Sound(resource_path("assets/audio/sword.wav"))
-sword_fx.set_volume(0.5)
-magic_fx = pygame.mixer.Sound(resource_path("assets/audio/magic.wav"))
-magic_fx.set_volume(0.75)
+    # Music and Sounds
+    pygame.mixer.music.load(resource_path("assets/audio/music.mp3"))
+    pygame.mixer.music.set_volume(0.5)
+    pygame.mixer.music.play(-1, 0.0, 5000)
+    sword_fx = pygame.mixer.Sound(resource_path("assets/audio/sword.wav"))
+    sword_fx.set_volume(0.5)
+    magic_fx = pygame.mixer.Sound(resource_path("assets/audio/magic.wav"))
+    magic_fx.set_volume(0.75)
 
-# Load Fighter Spritesheets
-warrior_sheet = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
-wizard_sheet = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
+    # Load Fighter Spritesheets
+    warrior_sheet = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
+    wizard_sheet = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
 
-# Define Animation Steps
-WARRIOR_ANIMATION_STEPS = [10, 8, 1, 7, 7, 3, 7]
-WIZARD_ANIMATION_STEPS = [8, 8, 1, 8, 8, 3, 7]
+    # Define Animation Steps
+    WARRIOR_ANIMATION_STEPS = [10, 8, 1, 7, 7, 3, 7]
+    WIZARD_ANIMATION_STEPS = [8, 8, 1, 8, 8, 3, 7]
 
-# Fighter Data
-WARRIOR_SIZE = 162
-WARRIOR_SCALE = 4
-WARRIOR_OFFSET = [72, 46]
-WARRIOR_DATA = [WARRIOR_SIZE, WARRIOR_SCALE, WARRIOR_OFFSET]
-WIZARD_SIZE = 250
-WIZARD_SCALE = 3
-WIZARD_OFFSET = [112, 97]
-WIZARD_DATA = [WIZARD_SIZE, WIZARD_SCALE, WIZARD_OFFSET]
+    # Fighter Data
+    WARRIOR_SIZE = 162
+    WARRIOR_SCALE = 4
+    WARRIOR_OFFSET = [72, 46]
+    WARRIOR_DATA = [WARRIOR_SIZE, WARRIOR_SCALE, WARRIOR_OFFSET]
+    WIZARD_SIZE = 250
+    WIZARD_SCALE = 3
+    WIZARD_OFFSET = [112, 97]
+    WIZARD_DATA = [WIZARD_SIZE, WIZARD_SCALE, WIZARD_OFFSET]
 
-# Game Variables
-score = [0, 0]  # Player Scores: [P1, P2]
+    # Game Variables
+    score = [0, 0]  # Player Scores: [P1, P2]
+
 
 
 def draw_text(text, font, color, x, y):
@@ -93,21 +92,20 @@ def draw_text(text, font, color, x, y):
 
 
 def blur_bg(image):
-    image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    blurred_image = cv2.GaussianBlur(image_bgr, (15, 15), 0)
-    return cv2.cvtColor(blurred_image, cv2.COLOR_BGR2RGB)
+    small = pygame.transform.smoothscale(image, (max(1, image.get_width() // 12),
+                                                max(1, image.get_height() // 12)))
+    return pygame.transform.smoothscale(small, image.get_size())
+
+
+_background_cache = {}
 
 
 def draw_bg(image, is_game_started=False):
-    if not is_game_started:
-        blurred_bg = blur_bg(image)
-        blurred_bg = pygame.surfarray.make_surface(np.transpose(blurred_bg, (1, 0, 2)))
-        blurred_bg = pygame.transform.scale(blurred_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        screen.blit(blurred_bg, (0, 0))
-    else:
-        image = pygame.surfarray.make_surface(np.transpose(image, (1, 0, 2)))
-        image = pygame.transform.scale(image, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        screen.blit(image, (0, 0))
+    key = (id(image), is_game_started)
+    if key not in _background_cache:
+        scaled = pygame.transform.smoothscale(image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        _background_cache[key] = scaled if is_game_started else blur_bg(scaled)
+    screen.blit(_background_cache[key], (0, 0))
 
 
 def draw_button(text, font, text_col, button_col, x, y, width, height):
@@ -127,8 +125,12 @@ def victory_screen(winner_img):
         screen.blit(resized_victory_img, (SCREEN_WIDTH // 2 - resized_victory_img.get_width() // 2,
                                           SCREEN_HEIGHT // 2 - resized_victory_img.get_height() // 2 - 50))
 
-        screen.blit(winner_img, (SCREEN_WIDTH // 2 - winner_img.get_width() // 2,
-                                 SCREEN_HEIGHT // 2 - winner_img.get_height() // 2 + 100))
+        if winner_img is not None:
+            screen.blit(winner_img, (SCREEN_WIDTH // 2 - winner_img.get_width() // 2,
+                                     SCREEN_HEIGHT // 2 - winner_img.get_height() // 2 + 100))
+        else:
+            draw_text("DRAW", menu_font_title, WHITE, SCREEN_WIDTH // 2 - 140,
+                      SCREEN_HEIGHT // 2 + 100)
 
         pygame.display.update()
 
@@ -266,7 +268,7 @@ def controls_screen():
         draw_text("L - Attack 2", small_font, RED, 500, 320)
 
         draw_text("Two players share one keyboard", small_font, YELLOW, 100, 410)
-        draw_text("First to lose all health loses", small_font, WHITE, 100, 450)
+        draw_text("60 seconds. Highest health wins at timeout.", small_font, WHITE, 100, 450)
 
         # Return button
         return_button = draw_button("RETURN TO MAIN MENU", menu_font, BLACK, GREEN, SCREEN_WIDTH // 2 - 220, 550, 500, 50)
@@ -284,9 +286,20 @@ def controls_screen():
 
 
 def reset_game():
-    global fighter_1, fighter_2
-    fighter_1 = Fighter(1, 200, 310, False, WARRIOR_DATA, warrior_sheet, WARRIOR_ANIMATION_STEPS, sword_fx)
-    fighter_2 = Fighter(2, 700, 310, True, WIZARD_DATA, wizard_sheet, WIZARD_ANIMATION_STEPS, magic_fx)
+    global arena, fighter_1, fighter_2
+    arena = Arena(SCREEN_WIDTH, SCREEN_HEIGHT)
+    fighter_1 = Fighter(arena.fighters[0], WARRIOR_DATA, warrior_sheet, WARRIOR_ANIMATION_STEPS, sword_fx)
+    fighter_2 = Fighter(arena.fighters[1], WIZARD_DATA, wizard_sheet, WIZARD_ANIMATION_STEPS, magic_fx)
+
+
+def keyboard_action(keys, player):
+    controls = ((pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_r, pygame.K_t)
+                if player == 1 else
+                (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_k, pygame.K_l))
+    left, right, jump, first, second = controls
+    move = 1 if keys[right] else -1 if keys[left] else 0
+    attack = 2 if keys[second] else 1 if keys[first] else 0
+    return encode_action(move, bool(keys[jump]), attack)
 
 
 def draw_health_bar(health, x, y):
@@ -336,23 +349,22 @@ def game_loop():
         draw_health_bar(fighter_1.health, 20, 50)
         draw_health_bar(fighter_2.health, SCREEN_WIDTH - 220, 50)
 
+        remaining = (arena.max_steps - arena.steps + FPS - 1) // FPS
+        draw_text(str(remaining), score_font, WHITE, SCREEN_WIDTH // 2 - 20, 90)
+
         exit_button = draw_button("MAIN MENU", menu_font, BLACK, YELLOW, SCREEN_WIDTH // 2 - 150, 20, 300, 50)
 
         if not round_over:
-            fighter_1.move(SCREEN_WIDTH, SCREEN_HEIGHT, fighter_2, round_over)
-            fighter_2.move(SCREEN_WIDTH, SCREEN_HEIGHT, fighter_1, round_over)
-
-            fighter_1.update()
-            fighter_2.update()
-
-            if not fighter_1.alive:
-                score[1] += 1
+            keys = pygame.key.get_pressed()
+            result = arena.step([keyboard_action(keys, 1), keyboard_action(keys, 2)])
+            for player in result["attacks_started"]:
+                (fighter_1 if player == 1 else fighter_2).attack_sound.play()
+            if result["done"]:
                 round_over = True
-                winner_img = wizard_victory_img
-            elif not fighter_2.alive:
-                score[0] += 1
-                round_over = True
-                winner_img = warrior_victory_img
+                if result["winner"] is not None:
+                    score[result["winner"] - 1] += 1
+                winner_img = (warrior_victory_img if result["winner"] == 1 else
+                              wizard_victory_img if result["winner"] == 2 else None)
         else:
             victory_screen(winner_img)
             return
@@ -372,12 +384,24 @@ def game_loop():
         clock.tick(FPS)
 
 
-while True:
-    menu_selection = main_menu()
+if __name__ == "__main__":
+    if "--smoke-test" in sys.argv:
+        reset_game()
+        for _ in range(10):
+            arena.step([0, 0])
+            draw_bg(bg_image, is_game_started=True)
+            fighter_1.draw(screen)
+            fighter_2.draw(screen)
+        draw_bg(bg_image)
+        pygame.quit()
+        print("Game display smoke test passed.")
+    else:
+        while True:
+            menu_selection = main_menu()
 
-    if menu_selection == "START":
-        game_loop()
-    elif menu_selection == "CONTROLS":
-        controls_screen()
-    elif menu_selection == "SCORES":
-        scores_screen()
+            if menu_selection == "START":
+                game_loop()
+            elif menu_selection == "CONTROLS":
+                controls_screen()
+            elif menu_selection == "SCORES":
+                scores_screen()
