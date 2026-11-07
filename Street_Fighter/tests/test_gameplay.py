@@ -2,37 +2,46 @@ import os
 os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
 from collections import defaultdict
-from pathlib import Path
-import sys
 import unittest
-from unittest.mock import Mock, patch
 import pygame
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from fighter import Fighter
+from Street_Fighter.src.arena import Arena, decode_action
+from Street_Fighter.src.main import build_parser, keyboard_action
+from Street_Fighter.src.scripted_demo import scripted_actions
 
 
 class GameplayTests(unittest.TestCase):
-    def fighter(self, player, x):
-        return Fighter(player, x, 310, False, [1, 1, (0, 0)],
-                       pygame.Surface((1, 7)), [1] * 7, Mock())
-
     def test_keyboard_players_still_move_independently(self):
-        one, two = self.fighter(1, 200), self.fighter(2, 300)
+        arena = Arena()
+        before = [f.x for f in arena.fighters]
         keys = defaultdict(bool, {pygame.K_a: True, pygame.K_RIGHT: True})
-        with patch('pygame.key.get_pressed', return_value=keys):
-            one.move(1280, 720, two, False)
-            two.move(1280, 720, one, False)
-        self.assertEqual((one.rect.x, two.rect.x), (190, 310))
+        arena.step([keyboard_action(keys, 1), keyboard_action(keys, 2)])
+        self.assertEqual([f.x for f in arena.fighters], [before[0] - 10, before[1] + 10])
 
-    def test_attack_animation_keeps_type_after_input_is_released(self):
-        one, two = self.fighter(1, 200), self.fighter(2, 290)
-        one.move(1280, 720, two, False, defaultdict(bool, {pygame.K_t: True}))
-        self.assertTrue(one.attacking)
-        one.move(1280, 720, two, False, defaultdict(bool))
-        self.assertEqual(one.attack_type, 2)
-        self.assertEqual(two.health, 90)
-        one.update()
-        self.assertEqual(one.action, 4)
+    def test_demo_is_opt_in_and_composes_with_streaming(self):
+        self.assertFalse(build_parser().parse_args([]).demo)
+        args = build_parser().parse_args(['--demo', '--headless', '--stream', 'rtsp://localhost:8554/match-1'])
+        self.assertTrue(args.demo and args.headless)
+        self.assertEqual(args.stream_fps, 30)
+
+    def test_scripted_routine_moves_attacks_jumps_and_terminates(self):
+        first, second = Arena(), Arena()
+        saw_jump = saw_attack = False
+        for _ in range(first.max_steps):
+            actions = scripted_actions(first)
+            self.assertEqual(actions, scripted_actions(second))
+            for action in actions:
+                _, jump, attack = decode_action(action)
+                saw_jump |= jump
+                saw_attack |= bool(attack)
+            result = first.step(actions)
+            second.step(actions)
+            self.assertEqual(first.state(), second.state())
+            if result['done']:
+                break
+        self.assertTrue(first.done and saw_jump and saw_attack)
+        self.assertTrue(any(f.health < 100 for f in first.fighters))
+        first.reset()
+        self.assertEqual(scripted_actions(first), scripted_actions(Arena()))
 
 
 if __name__ == '__main__':

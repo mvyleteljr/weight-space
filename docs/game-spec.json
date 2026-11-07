@@ -1,0 +1,157 @@
+{
+  "actions": [
+    {
+      "attack": 0,
+      "id": 0,
+      "jump": false,
+      "move": 0
+    },
+    {
+      "attack": 0,
+      "id": 1,
+      "jump": false,
+      "move": -1
+    },
+    {
+      "attack": 1,
+      "id": 2,
+      "jump": false,
+      "move": -1
+    },
+    {
+      "attack": 2,
+      "id": 3,
+      "jump": false,
+      "move": -1
+    },
+    {
+      "attack": 0,
+      "id": 4,
+      "jump": true,
+      "move": -1
+    },
+    {
+      "attack": 1,
+      "id": 5,
+      "jump": true,
+      "move": -1
+    },
+    {
+      "attack": 2,
+      "id": 6,
+      "jump": true,
+      "move": -1
+    },
+    {
+      "attack": 1,
+      "id": 7,
+      "jump": false,
+      "move": 0
+    },
+    {
+      "attack": 2,
+      "id": 8,
+      "jump": false,
+      "move": 0
+    },
+    {
+      "attack": 0,
+      "id": 9,
+      "jump": true,
+      "move": 0
+    },
+    {
+      "attack": 1,
+      "id": 10,
+      "jump": true,
+      "move": 0
+    },
+    {
+      "attack": 2,
+      "id": 11,
+      "jump": true,
+      "move": 0
+    },
+    {
+      "attack": 0,
+      "id": 12,
+      "jump": false,
+      "move": 1
+    },
+    {
+      "attack": 1,
+      "id": 13,
+      "jump": false,
+      "move": 1
+    },
+    {
+      "attack": 2,
+      "id": 14,
+      "jump": false,
+      "move": 1
+    },
+    {
+      "attack": 0,
+      "id": 15,
+      "jump": true,
+      "move": 1
+    },
+    {
+      "attack": 1,
+      "id": 16,
+      "jump": true,
+      "move": 1
+    },
+    {
+      "attack": 2,
+      "id": 17,
+      "jump": true,
+      "move": 1
+    }
+  ],
+  "default_max_steps": 3600,
+  "fps": 60,
+  "height": 600,
+  "observation_names": [
+    "self.x/width",
+    "self.y/height",
+    "self.vertical_speed/30",
+    "self.health/100",
+    "self.facing_right",
+    "self.grounded",
+    "self.attacking",
+    "self.attack_type/2",
+    "self.attack_cooldown/20",
+    "self.hit",
+    "self.animation/6",
+    "self.animation_frame/10",
+    "self.animation_tick/3",
+    "self.character",
+    "opponent.x/width",
+    "opponent.y/height",
+    "opponent.vertical_speed/30",
+    "opponent.health/100",
+    "opponent.facing_right",
+    "opponent.grounded",
+    "opponent.attacking",
+    "opponent.attack_type/2",
+    "opponent.attack_cooldown/20",
+    "opponent.hit",
+    "opponent.animation/6",
+    "opponent.animation_frame/10",
+    "opponent.animation_tick/3",
+    "opponent.character",
+    "relative_x/width",
+    "relative_y/height",
+    "time_remaining"
+  ],
+  "observation_size": 31,
+  "output_rule": "argmax; first index wins a tie",
+  "output_size": 18,
+  "player_order": [
+    1,
+    2
+  ],
+  "version": "street-fighter-v1",
+  "width": 1000
+}

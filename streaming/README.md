@@ -1,11 +1,30 @@
 # HLS spectators
 
-One game renders the match, one FFmpeg process encodes it, and MediaMTX shares
+The main broadcast source is the **weight-editing viewer**. It renders recorded
+network matches and agent-edit progress while providers run separately. One
+FFmpeg process encodes the rendered output, and MediaMTX shares
 that video with all spectators. Default output is video-only H.264 at 30 FPS,
 with dimensions fitted inside 1280×720 (no upscaling, even pixels, aspect ratio
 preserved within rounding). Local keyboard play is still the default.
 
-## Start with Docker
+## Broadcast weight-editing runs (primary workflow)
+
+Run from the repository root after installing FFmpeg and starting Docker:
+
+```sh
+docker compose -f streaming/compose.yml up -d
+uv run --no-project --python 3.13 --with pygame==2.6.1 python -m weight_space.viewer \
+  --demo runs/YOUR_WEIGHT_EDITING_RUN --stream rtsp://127.0.0.1:8554/match-1
+```
+
+Open http://127.0.0.1:8080. This follows the run's game 1 → editing → game 2
+presentation, with recorded matches replayed at game speed. Add `--headless` to
+render on a server without a desktop; omit `--paused` for automatic progression.
+The full viewer, including progress panels, is fitted to 922×720. It makes no
+provider calls and doesn't modify models. See the root README for starting the
+weight-editing workflow. There is one shared Arena engine, not a separate game.
+
+## Start the optional keyboard/scripted game with Docker
 
 Requirements: Python 3.12, FFmpeg with `libx264`, and a running Docker daemon.
 Commands below run from the **weight-space repository root**.
@@ -129,7 +148,7 @@ count. The encoder targets 2.5 Mbps (3 Mbps max); budget approximately that band
 per viewer plus protocol overhead, and measure rather than assume server capacity.
 Slow AI inference must run in separate processes and publish only its latest action;
 never call a remote model synchronously inside `game_loop()` or `Fighter.move()`.
-No real AI agents are present in this checkout.
+The weight-editing provider workflow is present, but real provider load and external-network streaming still need an acceptance test.
 
 ## Verification
 
@@ -153,3 +172,14 @@ if browser autoplay is blocked. The standard MediaMTX player handles reconnectin
 - [MediaMTX FFmpeg publishing](https://mediamtx.org/docs/publish/ffmpeg)
 - [MediaMTX configuration](https://mediamtx.org/docs/references/configuration-file)
 - [Pygame surface-to-bytes conversion](https://www.pygame.org/docs/ref/image.html#pygame.image.tobytes)
+
+To exercise the primary weight-editing viewer with generated before/after model
+fixtures (without provider calls), run:
+
+```sh
+Street_Fighter/.venv/bin/python streaming/smoke_test.py \
+  --mediamtx /path/to/mediamtx --source viewer
+```
+
+This checks 922×720 output, two readers, and recovery through the same HLS path.
+The fixture uses explicit test weights; it is not evidence of real agent performance.

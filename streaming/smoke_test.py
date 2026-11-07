@@ -50,7 +50,7 @@ def wait_stream(url, game):
     raise RuntimeError('HLS playlist did not become ready')
 
 
-def probe(url):
+def probe(url, expected_size=(1280, 720)):
     result = subprocess.run([
         'ffprobe', '-v', 'error', '-read_intervals', '%+6', '-count_frames',
         '-show_entries', 'stream=codec_name,codec_type,width,height,r_frame_rate,nb_read_frames',
@@ -59,7 +59,7 @@ def probe(url):
     streams = json.loads(result.stdout)['streams']
     assert len(streams) == 1, streams
     video = streams[0]
-    assert (video['codec_name'], video['codec_type'], video['width'], video['height'], video['r_frame_rate']) == ('h264', 'video', 1280, 720, '30/1'), video
+    assert (video['codec_name'], video['codec_type'], video['width'], video['height'], video['r_frame_rate']) == ('h264', 'video', *expected_size, '30/1'), video
     assert int(video['nb_read_frames']) >= 175, video
     return video
 
@@ -67,6 +67,7 @@ def probe(url):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mediamtx', default=shutil.which('mediamtx'))
+    parser.add_argument('--source', choices=('scripted', 'viewer'), default='scripted')
     args = parser.parse_args()
     if not args.mediamtx or not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
         parser.error('MediaMTX, ffmpeg and ffprobe are required')
@@ -88,20 +89,47 @@ def main():
     try:
         media = start([args.mediamtx, str(config_path)], 'media')
         start([sys.executable, 'streaming/server.py', '--port', str(web), '--hls-origin', f'http://127.0.0.1:{hls}'], 'web')
-        game = start([sys.executable, 'Street_Fighter/src/main.py', '--headless', '--demo', '--mute', '--stream', f'rtsp://127.0.0.1:{rtsp}/match-test'], 'game')
+        destination = f'rtsp://127.0.0.1:{rtsp}/match-test'
+        expected_size = (1280, 720)
+        if args.source == 'viewer':
+            # Real model matches, with explicit fixture weights; no provider calls.
+            sys.path.insert(0, str(ROOT))
+            from weight_space.game import match
+            from weight_space.network import initialize, save
+            from Street_Fighter.src.arena import encode_action
+            fixture = report_dir / 'viewer-fixture'
+            fixture.mkdir()
+            models = [fixture / 'one.json', fixture / 'two.json']
+            model = initialize([31, 18], zero=True)
+            for path in models:
+                save(path, model)
+            match(*models, fixture / 'before', max_steps=180)
+            for index, path in enumerate(models):
+                edited = initialize([31, 18], zero=True)
+                edited['layers'][0]['bias'][encode_action(move=1 if index == 0 else -1, attack=1)] = 1
+                path.write_text(json.dumps(edited))
+            match(*models, fixture / 'after', max_steps=180)
+            (fixture / 'demo.json').write_text(json.dumps({'phase': 'complete', 'agents': [
+                {'name': name, 'status': 'complete', 'reason': 'Validation fixture, not a provider response'}
+                for name in ('Fixture 1', 'Fixture 2')]}))
+            command = [sys.executable, '-m', 'weight_space.viewer', '--demo', str(fixture), '--headless', '--stream', destination]
+            expected_size = (922, 720)
+        else:
+            command = [sys.executable, 'Street_Fighter/src/main.py', '--headless', '--demo', '--mute', '--stream', destination]
+        game = start(command, 'game')
         url = f'http://127.0.0.1:{web}/live/match-test/index.m3u8'
         wait_stream(url, game)
         print('HLS available; decoding with two simultaneous viewers...', flush=True)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            viewers = list(pool.map(probe, [url, url]))
+            viewers = list(pool.map(lambda target: probe(target, expected_size), [url, url]))
         print('Both viewers decoded 720p/30 video. Restarting MediaMTX...', flush=True)
         stop(media)
         time.sleep(4)
         assert game.poll() is None, 'Publisher outage stopped gameplay'
         start([args.mediamtx, str(config_path)], 'media')
         wait_stream(url, game)
-        recovered = probe(url)
-        result = {'viewers': viewers, 'after_server_restart': recovered,
+        recovered = probe(url, expected_size)
+        result = {'source': args.source, 'viewers': viewers, 'after_server_restart': recovered,
                   'external_connection_tested': False, 'real_ai_agents_tested': False}
         (report_dir / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         print(f'PASS: two viewers and automatic recovery. Evidence: {report_dir}', flush=True)

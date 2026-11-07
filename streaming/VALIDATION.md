@@ -28,3 +28,21 @@ Browser dropped-frame counters were unavailable in the embedded browser.
 Reproduce using the commands in [README.md](README.md). The integration runner
 writes its own JSON result and service logs to a temporary directory and cleans up
 its child processes.
+
+## Merge validation
+
+Merged upstream `9eab9c0` into the streaming branch. The shared Arena, JSON-model
+validation, weight-editing providers and tool loop are preserved unchanged.
+The renderer keeps upstream's Pygame-only implementation; OpenCV/NumPy are no
+longer game requirements. The scripted test now emits Arena action IDs instead
+of running a separate combat implementation.
+
+- Upstream suite: 37 tests pass in the locked uv environment.
+- Streaming/scripted-input suite: 8 tests pass.
+- Shared game display smoke test passes.
+- Scripted shared-Arena HLS: two readers and MediaMTX restart recovery pass.
+- The weight-editing viewer supports `--stream`, `--stream-fps` and `--headless`
+  while preserving `--demo RUN_DIRECTORY`, replay controls and edit panels.
+- Weight-editing viewer HLS fixture: both readers decoded 180 H.264 frames in
+  six seconds at 922×720/30 FPS; decoding resumed after MediaMTX restarted.
+  These were local model-match fixtures, not live provider runs.
