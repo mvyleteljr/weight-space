@@ -11,12 +11,24 @@
     <div class="heading"><div><p class="eyebrow">THE SPECTATOR ROOM</p><h1>Every move.<br><span>From the front row.</span></h1></div>
       <p class="intro">Weight-edited policies.<br>One shared arena.<br>Watch the match unfold.</p></div>
     <section class="arena" aria-label="Live match">
+      <div class="run-panel">
+        <div class="scoreboard" aria-label="Run tally" role="status"><div><span id="score-name-1">Astra</span><strong id="score-1">0</strong></div><span class="versus">VS</span><div><span id="score-name-2">Fable</span><strong id="score-2">0</strong></div></div>
+        <div class="run-actions"><label>Games <select id="run-games"><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option><option>7</option><option>8</option><option>9</option></select></label><button id="new-run" disabled>New run</button></div>
+      </div>
+      <p id="tally-note" class="tally-note">0 games complete · 0 draws</p>
+      <p id="run-message" class="run-message" role="status">New run starts both agents with the same fresh random weights.</p>
       <div class="bar"><span id="match-label">MATCH 01</span><span id="status" role="status">● Connecting</span></div>
-      <div class="screen"><iframe id="player" title="Street Fighter live video" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
-      <div class="matchup"><div><span class="tag">PLAYER 1</span><h2>Warrior</h2></div><span class="versus">VS</span><div class="right"><span class="tag">PLAYER 2</span><h2>Wizard</h2></div></div>
+      <div class="screen"><canvas id="arena" width="1000" height="600" aria-label="Recorded game playback"></canvas><iframe id="player" hidden title="Street Fighter live video" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
+      <div class="controls" id="controls">
+        <div class="control-row"><button id="play" disabled>Play</button><button id="restart" disabled>Restart</button><label>Game <select id="game" disabled></select></label><button id="next" disabled>Next game →</button><label>Speed <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label><label><input id="auto" type="checkbox" checked> Play next game</label></div>
+        <div class="seek-row"><label for="seek">Time</label><input id="seek" type="range" min="0" max="1" value="0" step="1" disabled><output id="time">0:00 / 0:00</output></div>
+        <p id="playback-status" role="status">Loading saved games…</p>
+      </div>
+      <div class="matchup"><div><span class="tag">WARRIOR · PLAYER 1</span><h2 id="left-name">Warrior</h2></div><span class="versus" id="outcome">VS</span><div class="right"><span class="tag">WIZARD · PLAYER 2</span><h2 id="right-name">Wizard</h2></div></div>
     </section>
-    <div class="below"><p><span class="dot"></span>Video only · Buffered live coverage<br><small>Playback runs a few seconds behind the match.</small></p><button id="reconnect">Reconnect player ↗</button></div>
-    <p class="footnote">Spectator view · Matches and weight-editing progress are broadcast from the host.</p>
+    <div class="below"><p id="mode-note">Recorded game states · Playback stays in this browser</p><button id="reconnect">Refresh connection ↗</button></div>
+    <section class="reply-section" aria-labelledby="reply-title"><div class="reply-heading"><div><p class="eyebrow">BETWEEN GAMES</p><h2 id="reply-title">Agent replies</h2></div><label>Edit round <select id="edit-round"><option value="latest">Latest · follow live</option></select></label></div><p class="reply-help">Notes and tool results appear after each reply. Scroll each card to read earlier replies.</p><div id="replies" class="reply-grid"></div></section>
+    <p class="footnote">Playback controls affect only this browser. They do not change agent weights or interrupt the run.</p>
   </main>
   <footer><span>WEIGHT SPACE</span><span>A SEAT AT EVERY MATCH.</span></footer>
 </body>

@@ -185,5 +185,17 @@ def specification():
             "default_max_steps": 3600, "observation_size": len(OBSERVATION_NAMES),
             "observation_names": list(OBSERVATION_NAMES), "output_size": len(ACTIONS),
             "output_rule": "argmax; first index wins a tie", "player_order": [1, 2],
+            "rules": [
+                "Fighters have no body collision. They can overlap and move through each other.",
+                "Facing updates toward the opponent after movement, including after crossing sides.",
+                "Movement, jump, and attack can be combined. Horizontal movement also works in the air.",
+                "A jump can start only on the ground. Holding jump can start another jump after landing.",
+                "There is no block, guard, parry, crouch, dash, or invulnerability action.",
+                "Defense requires avoiding overlap with the attack area. Jumping does not grant invulnerability.",
+                "An attack checks for a hit only on the step when it starts, after movement and facing updates.",
+                "An attacking flag in the next observation describes an attack that has already made its hit check.",
+                "New movement, jump, and attack inputs are ignored while attacking or in hit recovery. Gravity continues.",
+                "Both attack types use the same hit area and damage. Both fighters can hit in the same step.",
+            ],
             "actions": [{"id": i, "move": m, "jump": j, "attack": a}
                         for i, (m, j, a) in enumerate(ACTIONS)]}

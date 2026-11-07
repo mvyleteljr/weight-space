@@ -1,4 +1,64 @@
-# HLS spectators
+# Browser playback and HLS spectators
+
+## Browser playback (no desktop window)
+
+The frontend can draw saved game states with the original character sprites.
+Play/pause, restart, seek, speed, game selection, and automatic next-game playback
+run in each browser. They do not control another viewer or change model weights.
+Agent reply cards update from the run records and include notes and tool results.
+Choose an edit round, or follow the latest replies. Character labels follow the
+saved assignment for each game.
+
+## Start new runs from the browser
+
+Run the server on the host that has your Astra and Fable CLI logins:
+
+```sh
+docker compose -f streaming/compose.yml stop spectator
+uv run python streaming/server.py --allow-new-runs --demo runs/astra-fable-swapped-02 --port 8080
+```
+
+Open http://127.0.0.1:8080. Choose the game count, then click **New run**.
+Both agents start with identical fresh random weights. Characters switch each
+game. Both agents edit after each game except the final game. The tally above
+the viewer counts completed game wins by agent, with draws shown separately.
+It can be ahead of playback if you pause or watch an earlier game.
+**Restart** only restarts playback. Saved runs remain in `runs/`.
+
+Only one run can be active. The launcher uses a fixed uv command; browser input
+can set only the game count (2 to 9). It requires a local address, same-origin
+request, and a session token. CLI credentials stay on the host. Docker playback
+does not enable this launcher. Omit `--demo` to restore the last browser run.
+
+## View existing runs
+
+For the Docker frontend, select the run each time you start or reconfigure it:
+
+```sh
+WEIGHT_SPACE_DEMO=/runs/astra-fable-swapped-02 docker compose -f streaming/compose.yml up -d spectator
+```
+
+Open http://127.0.0.1:8080. No Pygame viewer, FFmpeg publisher, or model call is
+needed for playback. The Docker mounts for run records and images are read-only.
+In this read-only mode, the server exposes the configured run and fixed images. It has no
+endpoint that edits weights, starts processes, or writes files.
+
+Without Docker, use:
+
+```sh
+uv run python streaming/server.py --demo runs/astra-fable-swapped-02 --port 8081
+```
+
+Open http://127.0.0.1:8081. The replay API provides `/api/run`, `/api/games/1`
+through `/api/games/9` for completed games, and `/api/replies?after=2` for a valid
+edit round. Complete game frames are cached in memory. Replies and run status
+remain live. The browser polls status every 1.5 seconds. Responses contain saved
+public notes, not private model reasoning.
+
+If no run is configured, the page uses the existing HLS video path below. In that
+mode, the desktop or headless publisher still controls playback.
+
+## HLS video mode
 
 The main broadcast source is the **weight-editing viewer**. It renders recorded
 network matches and agent-edit progress while providers run separately. One
@@ -23,6 +83,13 @@ render on a server without a desktop; omit `--paused` for automatic progression.
 The full viewer, including progress panels, is fitted to 922×720. It makes no
 provider calls and doesn't modify models. See the root README for starting the
 weight-editing workflow. There is one shared Arena engine, not a separate game.
+
+The viewer also supports multiple games, paired character assignments, and reply
+notes. For a paired demo, start the run with `--games 6 --swap-sides --paired-games`. Publish the
+viewer to `rtsp://127.0.0.1:8554/match-swapped-01`, then open
+`http://127.0.0.1:8080/?match=match-swapped-01`. Game labels follow each agent as
+characters switch. Keyboard playback controls remain in the desktop viewer;
+the web page receives video only. Add `--paused` to wait for Space on the host.
 
 ## Start the optional keyboard/scripted game with Docker
 

@@ -134,6 +134,17 @@ class LoopTests(unittest.TestCase):
             max_tokens=100, stream=False,
         )
 
+    def test_quick_tinfoil_calls_use_supported_reasoning_levels(self):
+        client = MagicMock()
+        client.chat.completions.create.return_value.model_dump.return_value = {
+            "choices": [{"message": {"content": "reply"}}]}
+        with patch.dict(os.environ, {"TINFOIL_API_KEY": "test-key"}), patch(
+            "tinfoil.TinfoilAI", return_value=client
+        ):
+            for model, effort in [('deepseek-v4-1-flash', 'none'), ('gemma4-31b', 'none'), ('glm-5-3', 'low')]:
+                complete('tinfoil', model, 'prompt', quick=True)
+                self.assertEqual(client.chat.completions.create.call_args.kwargs['reasoning_effort'], effort)
+
 
 if __name__ == "__main__":
     unittest.main()

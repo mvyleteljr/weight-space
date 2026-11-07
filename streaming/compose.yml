@@ -11,9 +11,13 @@ services:
     restart: unless-stopped
   spectator:
     image: python:3.12-alpine
-    command: ["python", "/app/server.py", "--bind", "0.0.0.0", "--hls-origin", "http://mediamtx:8888"]
+    command: ["python", "/app/server.py", "--bind", "0.0.0.0", "--hls-origin", "http://mediamtx:8888", "--assets", "/assets"]
+    environment:
+      WEIGHT_SPACE_DEMO: ${WEIGHT_SPACE_DEMO:-}
     volumes:
       - .:/app:ro
+      - ../runs:/runs:ro
+      - ../Street_Fighter/assets/images:/assets:ro
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

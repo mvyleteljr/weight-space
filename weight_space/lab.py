@@ -33,14 +33,27 @@ def keys(arguments, allowed, required=()):
 
 
 class WeightLab:
-    def __init__(self, initial, recording, directory, player):
+    def __init__(self, initial, recording, directory, player, game_number=1, prior_submission=None,
+                 additional_recordings=None):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
         self.initial = load(initial)
         self.model = copy.deepcopy(self.initial)
         self.player = integer(player, 1, 2, "player")
-        self.rows = [json.loads(line) for line in (Path(recording) / "steps.jsonl").read_text().splitlines()]
+        self.game_number = game_number
+        self.prior_submission = prior_submission
         self.result = json.loads((Path(recording) / "result.json").read_text())
+        self.recordings = []
+        sources = [(recording, player, game_number - 1 if additional_recordings else game_number)]
+        sources.extend(additional_recordings or [])
+        self.rows = []
+        for source, side, number in sources:
+            start = len(self.rows)
+            rows = [json.loads(line) for line in (Path(source) / "steps.jsonl").read_text().splitlines()]
+            self.rows.extend({**row, "recorded_player": side, "recorded_game": number,
+                              "game_step": i} for i, row in enumerate(rows))
+            self.recordings.append({"game": number, "your_player": side, "start": start,
+                                    "count": len(rows), "result": json.loads((Path(source) / "result.json").read_text())})
         self.revision, self.calls, self.test_cases = 0, 0, 0
         self.tested_revision = None
         self.submitted = False
@@ -82,10 +95,14 @@ class WeightLab:
 
     def info(self, args):
         keys(args, [])
-        return {"player": self.player, "interface": specification(),
+        return {"player": self.player, "completed_game": self.game_number,
+                "next_player": getattr(self, "next_player", self.player),
+                "next_game": self.game_number + 1, "prior_submission": self.prior_submission,
+                "interface": specification(),
                 "layers": [{"inputs": len(layer["weights"][0]), "outputs": len(layer["bias"]),
                             "activation": layer["activation"]} for layer in self.model["layers"]],
                 "recorded_steps": len(self.rows), "result": self.result,
+                "recordings": self.recordings,
                 "revision": self.revision, "calls_left": 40 - self.calls,
                 "test_cases_left": 64 - self.test_cases, "edits_left": 12 - self.revision}
 
@@ -94,7 +111,9 @@ class WeightLab:
         start = integer(args["start"], 0, len(self.rows) - 1, "start")
         count = integer(args.get("count", 3), 1, 8, "count")
         stride = integer(args.get("stride", 1), 1, len(self.rows), "stride")
-        return [{"step": i, "inputs": self.rows[i]["observations"][self.player - 1],
+        return [{"step": i, "game": self.rows[i]["recorded_game"], "game_step": self.rows[i]["game_step"],
+                 "your_player": self.rows[i]["recorded_player"],
+                 "inputs": self.rows[i]["observations"][self.rows[i]["recorded_player"] - 1],
                  "actions": self.rows[i]["actions"], "next_state": self.rows[i]["state"]}
                 for i in range(start, min(len(self.rows), start + count * stride), stride)]
 
@@ -106,8 +125,9 @@ class WeightLab:
             raise ValueError("original must be boolean.")
         model = self.initial if original else self.model
         return {"step": step, "revision": 0 if original else self.revision,
-                "recorded_action": self.rows[step]["actions"][self.player - 1],
-                **self.evaluate_input(model, self.rows[step]["observations"][self.player - 1])}
+                "game": self.rows[step]["recorded_game"], "your_player": self.rows[step]["recorded_player"],
+                "recorded_action": self.rows[step]["actions"][self.rows[step]["recorded_player"] - 1],
+                **self.evaluate_input(model, self.rows[step]["observations"][self.rows[step]["recorded_player"] - 1])}
 
     @staticmethod
     def evaluate_input(model, inputs):

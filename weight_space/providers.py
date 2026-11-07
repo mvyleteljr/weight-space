@@ -37,7 +37,7 @@ def tinfoil_models():
                 for m in json.load(response)["data"]]
 
 
-def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=False):
+def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=False, output_schema=None):
     if not model or model.startswith("SET_"):
         raise ValueError("Set the exact model ID before a live test.")
     if provider == "tinfoil":
@@ -50,9 +50,13 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
             client = TinfoilAI(api_key=key, timeout=timeout)
             client.client.max_retries = 0
             try:
+                options = {}
+                if quick and model in {"deepseek-v4-1-flash", "gemma4-31b", "gpt-oss-120b",
+                                       "glm-5-3", "kimi-k3-1-pro"}:
+                    options["reasoning_effort"] = "none" if model in {"deepseek-v4-1-flash", "gemma4-31b"} else "low"
                 body = client.chat.completions.create(
                     model=model, messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens, stream=False,
+                    max_tokens=max_tokens, stream=False, **options,
                 ).model_dump()
             finally:
                 client.client.close()
@@ -87,6 +91,13 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
                 command[2:2] = ["-c", 'model_reasoning_effort="low"']
             else:
                 command.extend(["--effort", "low"])
+        if output_schema is not None:
+            if provider == "codex":
+                schema_path = Path(temp) / "reply-schema.json"
+                schema_path.write_text(json.dumps(output_schema, allow_nan=False))
+                command[2:2] = ["--output-schema", str(schema_path)]
+            else:
+                command.extend(["--json-schema", json.dumps(output_schema, separators=(",", ":"))])
         # Run in an empty directory. Do not give either CLI the other agents' records.
         environment = os.environ.copy()
         for name in ("TINFOIL_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
@@ -106,4 +117,9 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
             raise RuntimeError("Claude returned an error result. Check subscription access.")
         metadata.update({"usage": body.get("usage"), "model_usage": body.get("modelUsage"),
                          "session_id": body.get("session_id")})
+        if output_schema is not None:
+            structured = body.get("structured_output")
+            if not isinstance(structured, dict):
+                raise RuntimeError("Claude returned no structured output.")
+            return json.dumps(structured, allow_nan=False), metadata
         return body["result"], metadata

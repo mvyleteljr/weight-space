@@ -1,22 +1,138 @@
-"""Small same-origin spectator server. Only serves web assets and proxies HLS.
+"""Replay data, web assets, optional HLS proxy, and an opt-in local launcher.
 
 Use a production HTTPS reverse proxy in front of this server for remote viewers.
-No game control or publishing endpoints are exposed here.
+The launcher requires a loopback bind and same-origin requests.
 """
 import argparse
+import json
 import mimetypes
+import os
+import re
+import secrets
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from urllib.request import Request, urlopen
 
 WEB = Path(__file__).resolve().parent / "web"
 
 
+class ReplayStore:
+    def __init__(self, directory):
+        self.directory = Path(directory).resolve()
+        self.cache = {}
+        self.lock = threading.Lock()
+
+    def status(self):
+        return json.loads((self.directory / "demo.json").read_text())
+
+    def game(self, number):
+        status = self.status()
+        entry = next((g for g in status.get("games", []) if g["number"] == number), None)
+        if entry is None:
+            raise ValueError("This game is not ready.")
+        with self.lock:
+            if number not in self.cache:
+                name = {1: "before", 2: "after"}.get(number, f"game-{number}")
+                folder = self.directory / name
+                manifest = json.loads((folder / "manifest.json").read_text())
+                frames = [json.loads(line)["state"] for line in (folder / "steps.jsonl").read_text().splitlines()]
+                self.cache[number] = {"number": number, "player_agents": entry.get("player_agents", [1, 2]),
+                                      "fps": manifest["game"]["fps"], "initial_state": manifest["initial_state"],
+                                      "frames": frames, "result": entry["result"]}
+            return self.cache[number]
+
+    def replies(self, after):
+        status = self.status()
+        allowed = {entry["after_game"] for entry in status.get("edit_rounds", [])}
+        if status.get("editing_after_game"):
+            allowed.add(status["editing_after_game"])
+        if after not in allowed:
+            raise ValueError("This edit round is not available.")
+        agents = next((entry["agents"] for entry in status.get("edit_rounds", [])
+                       if entry["after_game"] == after), status.get("agents", []))
+        folder = self.directory if after == 1 else self.directory / f"edit-{after}"
+        records = []
+        for index, agent in enumerate(agents, 1):
+            path = folder / f"lab-{index}" / "replies.json"
+            replies = json.loads(path.read_text()) if path.exists() else []
+            notes = []
+            for entry in replies:
+                calls = []
+                for call in entry.get("calls", []):
+                    result, args = call.get("result"), call.get("arguments", {})
+                    item = {"tool": call["tool"], "done": result is not None,
+                            "reason": args.get("reason"), "updates": len(args.get("updates", []))}
+                    if isinstance(result, dict):
+                        item.update({key: result[key] for key in ("error", "revision") if key in result})
+                        if "cases" in result:
+                            item["tests"] = [{key: case.get(key) for key in
+                                              ("action", "expected_action", "matches_expected")} for case in result["cases"]]
+                    calls.append(item)
+                notes.append({"turn": entry["turn"], "note": entry["note"], "calls": calls})
+            records.append({"agent": agent, "replies": notes})
+        return {"after_game": after, "agents": records}
+
+
 class SpectatorHandler(BaseHTTPRequestHandler):
+    def send_json(self, value):
+        body = json.dumps(value, allow_nan=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path.startswith("/api/"):
+            manager = getattr(self.server, "run_manager", None)
+            if manager:
+                if urlsplit("http://" + self.headers.get("Host", "")).hostname not in ("127.0.0.1", "localhost", "::1"):
+                    self.send_error(403)
+                    return
+                if manager.directory and (self.server.replay_store is None or self.server.replay_store.directory != manager.directory):
+                    self.server.replay_store = ReplayStore(manager.directory)
+                if path == "/api/run":
+                    self.send_json({"run": manager.directory.name if manager.directory else None,
+                                    "demo": manager.status(), "can_start": not manager.active(), "run_token": manager.token})
+                    return
+            store = getattr(self.server, "replay_store", None)
+            if store is None:
+                self.send_error(404, "No replay run is configured")
+                return
+            try:
+                if path == "/api/run":
+                    self.send_json({"run": store.directory.name, "demo": store.status(), "can_start": False})
+                elif re.fullmatch(r"/api/games/[1-9]", path):
+                    self.send_json(store.game(int(path.rsplit("/", 1)[1])))
+                elif path == "/api/replies":
+                    query = parse_qs(urlsplit(self.path).query)
+                    self.send_json(store.replies(int(query.get("after", ["0"])[0])))
+                else:
+                    self.send_error(404)
+            except (ValueError, FileNotFoundError):
+                self.send_error(404, "Replay data is not ready")
+            return
+        assets = {"/assets/background.jpg": "bg1.jpg", "/assets/warrior.png": "warrior.png",
+                  "/assets/wizard.png": "wizard.png"}
+        if path in assets:
+            asset = self.server.assets_root / assets[path]
+            if not asset.is_file():
+                self.send_error(404)
+                return
+            body = asset.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mimetypes.guess_type(asset.name)[0])
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path.startswith("/live/"):
             # Fixed upstream; no user-provided hostname or open proxy.
             target = self.server.hls_origin + self.path[len("/live"):]
@@ -49,6 +165,34 @@ class SpectatorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        manager = getattr(self.server, "run_manager", None)
+        if self.path != "/api/runs" or manager is None:
+            self.send_error(403, "Run creation is not enabled")
+            return
+        from streaming.run_control import RunBusyError
+        host = self.headers.get("Host", "")
+        if (urlsplit("http://" + host).hostname not in ("127.0.0.1", "localhost", "::1")
+                or self.headers.get("Origin") != "http://" + host
+                or self.headers.get("Content-Type", "").split(";")[0] != "application/json"
+                or not secrets.compare_digest(self.headers.get("X-Run-Token", ""), manager.token)):
+            self.send_error(403, "Use the local frontend to start a run")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 1024:
+                raise ValueError("Invalid request size.")
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict) or set(body) != {"games"}:
+                raise ValueError("Supply only the game count.")
+            directory = manager.start(body["games"])
+            self.server.replay_store = ReplayStore(directory)
+            self.send_json({"run": directory.name})
+        except RunBusyError as error:
+            self.send_error(409, str(error))
+        except (ValueError, OSError) as error:
+            self.send_error(400, str(error))
+
     def log_message(self, format, *args):
         # HLS makes frequent requests; leave success logs quiet.
         if len(args) > 1 and str(args[1]) not in ("200", "206", "304"):
@@ -60,12 +204,26 @@ if __name__ == "__main__":
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--hls-origin", default="http://127.0.0.1:8888")
+    parser.add_argument("--demo", type=Path, default=os.environ.get("WEIGHT_SPACE_DEMO"))
+    parser.add_argument("--assets", type=Path, default=WEB.parent.parent / "Street_Fighter/assets/images")
+    parser.add_argument("--allow-new-runs", action="store_true", help="Enable the fixed Astra/Fable launcher on this host.")
     args = parser.parse_args()
+    if args.allow_new_runs and args.bind not in ("127.0.0.1", "localhost"):
+        parser.error("Run creation requires a loopback bind address.")
     origin = urlsplit(args.hls_origin)
     if origin.scheme not in ("http", "https") or not origin.hostname or origin.path not in ("", "/"):
         parser.error("--hls-origin must be an HTTP(S) origin without a path")
     server = ThreadingHTTPServer((args.bind, args.port), SpectatorHandler)
     server.hls_origin = args.hls_origin.rstrip("/")
+    server.replay_store = ReplayStore(args.demo) if args.demo else None
+    server.assets_root = args.assets.resolve()
+    server.run_manager = None
+    if args.allow_new_runs:
+        # Host execution preserves the CLI subscription login; no credentials enter Docker or the browser.
+        import sys
+        sys.path.insert(0, str(WEB.parent.parent))
+        from streaming.run_control import RunManager
+        server.run_manager = RunManager(WEB.parent.parent, args.demo)
     print(f"Spectator page: http://{args.bind}:{args.port}", flush=True)
     try:
         server.serve_forever()

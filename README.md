@@ -118,6 +118,16 @@ command still uses XOR; the `match` command runs Street Fighter.
 
 ## Watch agents play
 
+The frontend now includes browser playback controls and agent reply cards. Select
+a run with `uv run python streaming/server.py --demo runs/YOUR_RUN --port 8081`,
+then open http://127.0.0.1:8081. No desktop viewer is required. See
+[browser playback](streaming/README.md) for Docker setup and the optional HLS mode.
+Add `--allow-new-runs` to enable the **New run** button on the local host.
+Choose 2 to 9 games. Each run starts Astra and Fable from identical fresh random
+weights, switches characters each game, and lets both agents edit after each game
+except the final game. The tally counts agent wins and shows draws separately.
+**Restart** only restarts playback of the selected game.
+
 The input-test loop lets Astra and Fable inspect recorded actions, read layer
 activations, edit explicit weight values, and test chosen inputs before submission.
 Both start with the same random 31–8–18 network. Each agent has its own candidate.
@@ -130,9 +140,54 @@ uv run --no-project --python 3.13 --with pygame==2.6.1 python -m weight_space.vi
 
 Run the viewer command in another terminal. Press E for tool counts, test counts,
 revision numbers, and response wait time. Press 1 or 2 to watch either game.
+The edit view also shows each reply note, requested tool, and test result as it
+arrives. Use the mouse wheel over either card, or Page Up/Page Down, to scroll.
+Press End to follow new replies. Use [ and ] to select an edit round. Start the
+viewer with `--edits` to open this view directly. Earlier saved runs also work.
+Replies appear after each CLI response completes; individual tokens do not stream.
+Use `--games 3` on the tool-loop command for three games. The range is 2 to 9.
+Each extra game follows another edit round. Agents receive the last game result
+and keep their own last weights. Press a number key to select a completed game.
+Add `--swap-sides` to switch warrior and wizard each game. Agents edit after each
+game and receive their own actions, activations, and result from that game.
+The viewer labels agents by the assignment in each saved game.
+
+```sh
+uv run python -m weight_space.tool_loop --output runs/astra-fable-swapped-02 --games 6 --swap-sides
+```
+
+Six games means one random baseline and five edit rounds. To hold weights fixed
+for both character assignments before editing, also add `--paired-games` and use
+4, 6, or 8 games. `info.recordings` gives each game's player slot and start index
+for `read_steps` and `inspect_step`. Inputs always describe the agent's own fighter
+first, including when it controls player 2.
+Each edit round has its own time and tool limits. Records for later edit rounds
+are in `edit-2`, `edit-3`, and so on. Later games are in `game-3`, `game-4`, and so on.
+
+Choose each provider and model with `--player-1 provider:model` and
+`--player-2 provider:model`. Providers are `codex`, `claude`, and `tinfoil`.
+Use `--reply-timeout 25 --edit-seconds 60` to set time limits in seconds.
+Load `.env` when using Tinfoil. A timeout stops the run; it does not silently
+replace an agent or reuse an untested revision.
+
+Compare complete edit loops before choosing models:
+
+```sh
+uv run --env-file .env python -m weight_space.benchmark --output runs/speed-test-03 --models codex:gpt-6-luna tinfoil:deepseek-v4-1-flash tinfoil:gemma4-31b
+```
+
+Each candidate gets the same initial model, player side, and game feedback.
+The report measures time to a tested submission. It does not measure game skill.
+For quick Tinfoil calls, DeepSeek Flash and Gemma use reasoning effort `none`;
+GLM, Kimi K3.1 Pro, and GPT-OSS 120B use `low`. Other models keep their defaults.
+These settings follow the [Tinfoil reasoning guide](https://docs.tinfoil.sh/guides/reasoning).
 
 The host sends a compact JSON tool list through each subscription CLI. It accepts
 only the listed data operations. Native shell and code tools remain disabled.
+Codex receives `--output-schema`; Claude receives `--json-schema`. The schema
+allows only the seven data tools and their argument fields. Claude replies are
+read from `structured_output`. Host validation still checks types, bounds, and
+state before applying edits. A valid JSON shape does not prove a good strategy.
 The agents can read a sequence of saved steps, inspect a step's input, activations,
 scores and action, read a neuron, set numeric weights, test up to eight inputs per
 call, and submit. Tests can include an expected action. A mismatch is feedback;

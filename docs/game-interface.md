@@ -73,6 +73,22 @@ Both policies receive the same pre-step state from their own perspective. The
 engine applies movement, updates facing, then resolves both attacks together.
 Two fighters can hit or knock out each other in the same step.
 
+Fighters have no body collision. They can overlap and pass through each other.
+They turn toward each other after movement. Horizontal movement also works in
+the air. There is no block, guard, crouch, parry, dash, or invulnerability action.
+Defense requires avoiding the attack area through position and timing.
+
+Both attacks use the same area, which is 160 pixels wide and 180 pixels tall.
+The area starts at the fighter center and extends forward. Its top is at the
+fighter's body top. There is no separate low strike. A jump avoids a grounded
+attack only when the bodies no longer overlap vertically at the hit check.
+Starting a jump on the same step as a nearby attack does not provide immunity.
+
+An attack checks for damage only on the step when it starts. The later attack
+animation does not repeat that check. Thus, an observed `attacking` flag describes
+an attack whose hit check has already occurred. The interface includes these
+rules so the editing agents do not have to infer them from action names.
+
 ## Timing and game rules
 
 The default arena is 1,000 by 600 pixels. One step is 1/60 of a simulated second.

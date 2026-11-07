@@ -64,6 +64,39 @@ class ArenaTests(unittest.TestCase):
             arena.step([attack, 0])
         self.assertLess(arena.fighters[1].health, 90)
 
+    def test_crossing_bodies_updates_facing(self):
+        arena = Arena()
+        arena.fighters[0].x, arena.fighters[1].x = 400, 410
+        arena.step([encode_action(move=1), encode_action(move=-1)])
+        self.assertEqual([f.x for f in arena.fighters], [410, 400])
+        self.assertTrue(arena.fighters[0].flip)
+        self.assertFalse(arena.fighters[1].flip)
+
+    def test_jump_avoids_hit_only_after_vertical_clearance(self):
+        arena = Arena()
+        arena.fighters[0].x, arena.fighters[1].x = 400, 500
+        arena.step([encode_action(attack=1), encode_action(jump=True)])
+        self.assertEqual(arena.fighters[1].health, 90)
+        arena.reset()
+        arena.fighters[0].x, arena.fighters[1].x = 400, 500
+        arena.step([0, encode_action(jump=True)])
+        for _ in range(9):
+            arena.step([0, 0])
+        self.assertLessEqual(arena.fighters[1].y + 180, arena.fighters[0].y)
+        arena.step([encode_action(attack=1), encode_action(move=-1)])
+        self.assertEqual(arena.fighters[1].health, 100)
+        self.assertEqual(arena.fighters[1].x, 490)
+
+    def test_attack_checks_hit_only_at_start(self):
+        arena = Arena()
+        arena.fighters[0].x, arena.fighters[1].x = 400, 700
+        arena.step([encode_action(attack=1), 0])
+        for _ in range(15):
+            arena.step([0, encode_action(move=-1)])
+        self.assertTrue(arena.fighters[0].attacking)
+        self.assertEqual(arena.fighters[1].x, 550)
+        self.assertEqual(arena.fighters[1].health, 100)
+
     def test_simultaneous_knockout_has_no_first_player_advantage(self):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = 400, 500
