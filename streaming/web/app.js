@@ -134,6 +134,7 @@ function renderReplies(data) {
       log.append(block);
     }
     if (agent.error) log.append(element('p', agent.error, 'error'));
+    if (agent.note) log.append(element('p', agent.note));
     card.append(log); return card;
   });
   $('replies').replaceChildren(...cards);

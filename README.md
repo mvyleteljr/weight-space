@@ -163,6 +163,11 @@ for `read_steps` and `inspect_step`. Inputs always describe the agent's own figh
 first, including when it controls player 2.
 Each edit round has its own time and tool limits. Records for later edit rounds
 are in `edit-2`, `edit-3`, and so on. Later games are in `game-3`, `game-4`, and so on.
+If a CLI reply times out, the agent gets one retry per edit round within the same
+time budget. If it times out again, or the edit time expires, the next game uses
+that agent's weights from the last game. Unsubmitted edits are discarded. The
+reply card marks the skipped edit as `kept_previous`. Other errors still stop the
+run. A timeout message shows the time limit, without the full CLI command.
 
 Choose each provider and model with `--player-1 provider:model` and
 `--player-2 provider:model`. Providers are `codex`, `claude`, and `tinfoil`.

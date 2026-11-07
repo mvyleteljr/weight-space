@@ -102,8 +102,12 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
         environment = os.environ.copy()
         for name in ("TINFOIL_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
             environment.pop(name, None)
-        result = subprocess.run(command, input=prompt, text=True, capture_output=True,
-                                timeout=timeout, cwd=temp, env=environment)
+        try:
+            result = subprocess.run(command, input=prompt, text=True, capture_output=True,
+                                    timeout=timeout, cwd=temp, env=environment)
+        except subprocess.TimeoutExpired:
+            # The command includes the full schema. Keep it out of user-facing errors.
+            raise TimeoutError(f"{provider} did not reply within {timeout:.0f} seconds.") from None
         if result.returncode:
             raise RuntimeError(f"{provider} exited with status {result.returncode}: "
                                + result.stderr[-1500:])

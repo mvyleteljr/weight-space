@@ -10,6 +10,13 @@ from weight_space.tool_loop import parse_calls
 
 
 class StructuredReplyTests(unittest.TestCase):
+    def test_timeout_message_does_not_include_command_or_schema(self):
+        with patch('weight_space.providers.shutil.which', return_value='/test/cli'), \
+             patch('weight_space.providers.subprocess.run', side_effect=subprocess.TimeoutExpired(
+                 ['claude', '--json-schema', 'private-command-data'], 60)):
+            with self.assertRaisesRegex(TimeoutError, '^claude did not reply within 60 seconds.$'):
+                complete('claude', 'test', 'prompt', timeout=60, output_schema=TOOL_REPLY_SCHEMA)
+
     def test_both_clis_receive_schema_and_keep_code_tools_disabled(self):
         packet = {'note': 'Read the interface.', 'calls': [{'tool': 'info', 'arguments': {}}]}
 

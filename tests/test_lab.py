@@ -190,6 +190,52 @@ class LabTests(unittest.TestCase):
         self.assertEqual([r['after_game'] for r in result['edit_rounds']], [1, 2, 3])
         self.assertEqual(result['tally'], {'wins': [2, 1], 'draws': 1, 'games': 4})
 
+    def test_timeout_retries_once_without_replaying_tools(self):
+        edit = json.dumps({'note': 'Set a bias.', 'calls': [
+            {'tool': 'edit_weights', 'arguments': {'reason': 'Set a bias.', 'updates': [
+                {'layer': 1, 'row': 4, 'column': None, 'value': 2}]}}]})
+        finish = json.dumps({'note': 'Test and submit.', 'calls': [
+            {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*31}]}},
+            {'tool': 'submit', 'arguments': {'reason': 'Keep this revision.'}}]})
+        with patch('weight_space.tool_loop.complete', side_effect=[(edit, {}), TimeoutError('Slow reply'),
+                                                                  (finish, {})]) as provider:
+            run_agent(self.lab, 'claude', 'test')
+        self.assertEqual(provider.call_count, 3)
+        self.assertEqual(provider.call_args_list[1].args[2], provider.call_args_list[2].args[2])
+        self.assertEqual(self.lab.revision, 1)
+        self.assertTrue(self.lab.submitted)
+        self.assertIn('Retrying once', read_replies(self.lab.directory)[1]['note'])
+
+    def test_timeout_retry_is_bounded_by_count_and_time(self):
+        with patch('weight_space.tool_loop.complete', side_effect=TimeoutError('Slow reply')) as provider:
+            with self.assertRaises(TimeoutError):
+                run_agent(self.lab, 'claude', 'test')
+        self.assertEqual(provider.call_count, 2)
+        with patch('weight_space.tool_loop.complete', side_effect=TimeoutError('Slow reply')) as provider, \
+             patch('weight_space.tool_loop.time.monotonic', side_effect=[0, 0, 0, 241]):
+            with self.assertRaises(TimeoutError):
+                run_agent(self.lab, 'claude', 'test', max_seconds=240)
+        self.assertEqual(provider.call_count, 1)
+
+    def test_timed_out_candidate_is_discarded_and_games_continue(self):
+        def agent(lab, provider, model, edit_seconds, reply_timeout):
+            if lab.game_number == 2:
+                self.assertEqual(lab.initial['layers'][1]['bias'][4], 1)
+                self.assertIsNotNone(lab.prior_submission)
+            lab.dispatch('edit_weights', {'reason': 'Set a bias.', 'updates': [
+                {'layer': 1, 'row': 4, 'column': None, 'value': lab.game_number}]})
+            if provider == 'claude' and lab.game_number == 2:
+                raise TimeoutError('Slow reply')
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            return lab.dispatch('submit', {'reason': 'Keep this revision.'})
+        with patch('weight_space.tool_loop.run_agent', agent):
+            result = run_tool_demo(self.root / 'timeout', max_steps=3, games=3, swap_sides=True)
+        self.assertEqual(result['phase'], 'complete')
+        self.assertEqual(result['agents'][1]['status'], 'kept_previous')
+        second, third = result['games'][1:]
+        self.assertEqual(second['result']['models'][0]['sha256'], third['result']['models'][1]['sha256'])
+        self.assertNotEqual(second['result']['models'][1]['sha256'], third['result']['models'][0]['sha256'])
+
 
 if __name__ == '__main__':
     unittest.main()

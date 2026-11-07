@@ -94,6 +94,7 @@ TOOL HISTORY
 def run_agent(lab, provider, model_id, max_seconds=240, reply_timeout=60):
     history = []
     replies = []
+    timeout_retries = 0
     deadline = time.monotonic() + max_seconds
     for turn in range(1, 11):
         remaining = deadline - time.monotonic()
@@ -105,9 +106,27 @@ def run_agent(lab, provider, model_id, max_seconds=240, reply_timeout=60):
         publish(lab.directory / "progress.json", progress)
         prompt = prompt_for(lab, history, turn)
         (lab.directory / f"turn-{turn}.prompt.txt").write_text(prompt)
-        text, metadata = complete(provider, model_id, prompt, min(reply_timeout, remaining),
-                                  4000, quick=True,
-                                  output_schema=TOOL_REPLY_SCHEMA if provider in ("codex", "claude") else None)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("The editing time budget expired.")
+            progress.update(request_started_at=time.time(), reply_timeout=min(reply_timeout, remaining),
+                            timeout_retries=timeout_retries)
+            publish(lab.directory / "progress.json", progress)
+            try:
+                text, metadata = complete(provider, model_id, prompt, min(reply_timeout, remaining),
+                                          4000, quick=True,
+                                          output_schema=TOOL_REPLY_SCHEMA if provider in ("codex", "claude") else None)
+                break
+            except TimeoutError:
+                retry = timeout_retries == 0 and deadline - time.monotonic() > 0
+                note = ("The reply timed out. Retrying once with the same inputs." if retry else
+                        "The reply timed out. Keep the weights from the last game.")
+                replies.append({"turn": turn, "note": note, "calls": []})
+                publish(lab.directory / "replies.json", replies)
+                if not retry:
+                    raise
+                timeout_retries += 1
         (lab.directory / f"turn-{turn}.reply.txt").write_text(text)
         (lab.directory / f"turn-{turn}.provider.json").write_text(encode(metadata))
         try:
@@ -228,6 +247,12 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                             save(current[index], load(labs[index].directory / "submitted.json"))
                             prior[index] = result
                             status["agents"][index].update(result, status="submitted")
+                        except TimeoutError as error:
+                            # Only submitted models can become current. Discard this round's
+                            # candidate, including edits made before a later reply timed out.
+                            status["agents"][index].update(status="kept_previous", error=str(error),
+                                note="Edit skipped after a timeout. The weights from the last game remain active.",
+                                active_sha256=fingerprint(load(current[index])))
                         except Exception as error:
                             status["agents"][index].update(status="failed", error=str(error))
                     publish(output / "demo.json", status)
