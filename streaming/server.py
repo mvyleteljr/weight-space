@@ -118,8 +118,8 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             except (ValueError, FileNotFoundError):
                 self.send_error(404, "Replay data is not ready")
             return
-        assets = {"/assets/background.jpg": "bg1.jpg", "/assets/warrior.png": "warrior.png",
-                  "/assets/wizard.png": "wizard.png"}
+        assets = {"/assets/background.jpg": "bg1.jpg", "/assets/grimes-sprites.png": "grimes-sprites.png",
+                  "/assets/shoggoth-sprites.png": "shoggoth-sprites.png"}
         if path in assets:
             asset = self.server.assets_root / assets[path]
             if not asset.is_file():

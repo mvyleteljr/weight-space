@@ -78,16 +78,16 @@ They turn toward each other after movement. Horizontal movement also works in
 the air. There is no block, guard, crouch, parry, dash, or invulnerability action.
 Defense requires avoiding the attack area through position and timing.
 
-Both attacks use the same area, which is 160 pixels wide and 180 pixels tall.
-The area starts at the fighter center and extends forward. Its top is at the
-fighter's body top. There is no separate low strike. A jump avoids a grounded
-attack only when the bodies no longer overlap vertically at the hit check.
-Starting a jump on the same step as a nearby attack does not provide immunity.
-
-An attack checks for damage only on the step when it starts. The later attack
-animation does not repeat that check. Thus, an observed `attacking` flag describes
-an attack whose hit check has already occurred. The interface includes these
-rules so the editing agents do not have to infer them from action names.
+All attacks use contact areas aligned with their sprite-sheet scale, anchor,
+and facing. Grimes attacks 1/2 (R/T) and Shoggoth attack 2 (L) are active on
+animation frames 4–5. Shoggoth attack 1 (K) remains active on frames 3–5.
+Grimes' blade hits require 2 horizontal and 4 vertical pixels of body overlap;
+Shoggoth's arm hits retain the firmer 12-horizontal/10-vertical threshold. Grimes' sword and Shoggoth's raised tentacles are excluded
+from hurt areas. Each swing can hit once; windup and recovery cannot hit.
+`attack_connected` records that a swing already landed. Damage and the target's
+hit-reaction animation occur on the same rendered frame. Hits interrupt an
+opponent's attack, except that simultaneous contact still damages both fighters.
+All attacks deal 10 damage. Observation dimensions and action IDs are unchanged.
 
 ## Timing and game rules
 

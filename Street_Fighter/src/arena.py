@@ -50,6 +50,7 @@ class FighterState:
     jump: bool = False
     attacking: bool = False
     attack_type: int = 0
+    attack_connected: bool = False
     attack_cooldown: int = 0
     hit: bool = False
     health: int = 100
@@ -80,6 +81,50 @@ class FighterState:
                 self.attack_type = 0
                 self.attack_cooldown = COOLDOWN
                 self.hit = False
+
+
+# Solid contact regions in the original sprite-sheet cells (left, top, right,
+# bottom). Exclude faint trails and inset tips; inactive frames cannot deal damage.
+ATTACK_BOXES = {
+    (1, 1): {4: (82, 70, 116, 90), 5: (80, 65, 93, 88)},
+    (1, 2): {4: (82, 75, 97, 99), 5: (80, 78, 97, 99)},
+    # Preserve the already-tuned K reach and overlap.
+    (2, 1): {3: (125, 137, 205, 164), 4: (125, 137, 235, 164),
+             5: (125, 137, 227, 164)},
+    (2, 2): {4: (125, 92, 178, 151), 5: (125, 145, 207, 165)},
+}
+SPRITE_GEOMETRY = {1: (162, 4, 72, 46), 2: (250, 3, 112, 97)}
+
+
+def sprite_box(fighter, box):
+    """Use the same scale, anchor and horizontal flip as both renderers."""
+    size, scale, offset_x, offset_y = SPRITE_GEOMETRY[fighter.player]
+    left, top, right, bottom = box
+    if fighter.flip:
+        left, right = size - right, size - left
+    return (fighter.x + (left - offset_x) * scale,
+            fighter.y + (top - offset_y) * scale,
+            fighter.x + (right - offset_x) * scale,
+            fighter.y + (bottom - offset_y) * scale)
+
+
+def attack_box(fighter):
+    if not fighter.alive or not fighter.attacking or fighter.hit or fighter.attack_connected:
+        return None
+    action = 3 if fighter.attack_type == 1 else 4
+    # Damage and hit reaction correspond to the frame rendered at the end of this tick.
+    frame = ((fighter.frame_index * ANIMATION_TICKS + fighter.animation_tick + 1)
+             // ANIMATION_TICKS) if fighter.action == action else 0
+    box = ATTACK_BOXES.get((fighter.player, fighter.attack_type), {}).get(frame)
+    return sprite_box(fighter, box) if box else None
+
+
+def hurt_box(fighter):
+    if fighter.player == 1:
+        # Keep the tuned Grimes body region; never include her blade as a hurt area.
+        return fighter.x + 8, fighter.y + 48, fighter.x + 64, fighter.y + 208
+    # Shoggoth's substantial body, excluding its long attacking/raised tentacles.
+    return sprite_box(fighter, (75, 92, 180, 167))
 
 
 class Arena:
@@ -142,6 +187,7 @@ class Arena:
                     fighter.vel_y, fighter.jump = JUMP_SPEED, True
                 if attack and fighter.attack_cooldown == 0:
                     fighter.attacking, fighter.attack_type = True, attack
+                    fighter.attack_connected = False
                     strikes.append(index)
             fighter.vel_y += GRAVITY
             fighter.y += fighter.vel_y
@@ -153,12 +199,17 @@ class Arena:
                 fighter.flip = other.x < fighter.x
         # Resolve both attacks from the same post-movement state. Simultaneous hits are possible.
         damage = [0, 0]
-        for index in strikes:
-            fighter, target = self.fighters[index], self.fighters[1 - index]
-            left = fighter.x + BODY_WIDTH // 2 - (2 * BODY_WIDTH if fighter.flip else 0)
-            if (left < target.x + BODY_WIDTH and left + 2 * BODY_WIDTH > target.x
-                    and fighter.y < target.y + BODY_HEIGHT and fighter.y + BODY_HEIGHT > target.y):
+        for index, fighter in enumerate(self.fighters):
+            box = attack_box(fighter)
+            if box is None:
+                continue
+            target = hurt_box(self.fighters[1 - index])
+            # A thin blade needs only shallow contact; preserve the heavier arm threshold.
+            min_x, min_y = (2, 4) if fighter.player == 1 else (12, 10)
+            if (min(box[2], target[2]) - max(box[0], target[0]) >= min_x
+                    and min(box[3], target[3]) - max(box[1], target[1]) >= min_y):
                 damage[1 - index] += DAMAGE
+                fighter.attack_connected = True
         for index, fighter in enumerate(self.fighters):
             fighter.health = max(0, fighter.health - damage[index])
             if damage[index]:
@@ -192,10 +243,11 @@ def specification():
                 "A jump can start only on the ground. Holding jump can start another jump after landing.",
                 "There is no block, guard, parry, crouch, dash, or invulnerability action.",
                 "Defense requires avoiding overlap with the attack area. Jumping does not grant invulnerability.",
-                "An attack checks for a hit only on the step when it starts, after movement and facing updates.",
-                "An attacking flag in the next observation describes an attack that has already made its hit check.",
+                "Attacks hit only during visible contact frames: Grimes attacks 1/2 and Shoggoth attack 2 on frames 4-5; Shoggoth attack 1 on frames 3-5.",
+                "Sprite-aligned attack areas require 2 horizontal and 4 vertical pixels of body overlap for Grimes blades, or 12 horizontal and 10 vertical pixels for Shoggoth arms. Each swing hits at most once.",
+                "An attacking flag includes windup, contact, and recovery. A hit cancels the target attack unless both hits occur on the same step.",
                 "New movement, jump, and attack inputs are ignored while attacking or in hit recovery. Gravity continues.",
-                "Both attack types use the same hit area and damage. Both fighters can hit in the same step.",
+                "All attacks deal 10 damage. Both fighters can hit in the same step.",
             ],
             "actions": [{"id": i, "move": m, "jump": j, "attack": a}
                         for i, (m, j, a) in enumerate(ACTIONS)]}

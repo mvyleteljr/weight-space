@@ -220,7 +220,7 @@ $('speed').addEventListener('change', () => {speed = Number($('speed').value); d
 $('seek').addEventListener('input', () => {frame = Number($('seek').value); endWait = 0; syncControls(); draw();});
 $('edit-round').addEventListener('change', () => {replyKey = ''; poll();});
 $('reconnect').addEventListener('click', () => {if (fallback) $('player').src = $('player').src; poll();});
-Promise.all(['/assets/background.jpg', '/assets/warrior.png', '/assets/wizard.png'].map(src => new Promise((resolve, reject) => {
+Promise.all(['/assets/background.jpg', '/assets/grimes-sprites.png', '/assets/shoggoth-sprites.png'].map(src => new Promise((resolve, reject) => {
   const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src;
 }))).then(images => {assets = images; draw();}).catch(() => {$('playback-status').textContent = 'Game images could not load.';});
 poll(); setInterval(poll, 1500); requestAnimationFrame(animate);

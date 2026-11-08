@@ -59,9 +59,9 @@ def main():
     background = pygame.transform.smoothscale(pygame.image.load(str(assets / "images/bg1.jpg")), (1000, 600))
     fonts = {size: pygame.font.Font(None, size) for size in (22, 26, 32, 44)}
     fighters = [Fighter(FighterState(1, 200, 310, False), [162, 4, [72, 46]],
-                        pygame.image.load(str(assets / "images/warrior.png")).convert_alpha(), ANIMATION_STEPS[0], None),
+                        pygame.image.load(str(assets / "images/grimes-sprites.png")).convert_alpha(), ANIMATION_STEPS[0], None),
                 Fighter(FighterState(2, 700, 310, True), [250, 3, [112, 97]],
-                        pygame.image.load(str(assets / "images/wizard.png")).convert_alpha(), ANIMATION_STEPS[1], None)]
+                        pygame.image.load(str(assets / "images/shoggoth-sprites.png")).convert_alpha(), ANIMATION_STEPS[1], None)]
     selected_game, edit_after = args.game, 1
     phase, frame, playing, speed = game_directory(selected_game), 0.0, not args.paused, 1.0
     if args.edits:

@@ -103,8 +103,8 @@ if __name__ == "__main__":
     # Load Assets
     bg_image = pygame.image.load(resource_path("assets/images/bg1.jpg")).convert()
     victory_img = pygame.image.load(resource_path("assets/images/victory.png")).convert_alpha()
-    warrior_victory_img = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
-    wizard_victory_img = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
+    warrior_victory_img = pygame.image.load(resource_path("assets/images/grimes-sprites.png")).convert_alpha()
+    wizard_victory_img = pygame.image.load(resource_path("assets/images/shoggoth-sprites.png")).convert_alpha()
 
     # Fonts
     menu_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 50)
@@ -123,8 +123,8 @@ if __name__ == "__main__":
     magic_fx.set_volume(0.75)
 
     # Load Fighter Spritesheets
-    warrior_sheet = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
-    wizard_sheet = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
+    warrior_sheet = pygame.image.load(resource_path("assets/images/grimes-sprites.png")).convert_alpha()
+    wizard_sheet = pygame.image.load(resource_path("assets/images/shoggoth-sprites.png")).convert_alpha()
 
     # Define Animation Steps
     WARRIOR_ANIMATION_STEPS = [10, 8, 1, 7, 7, 3, 7]
@@ -315,13 +315,13 @@ def controls_screen():
         controls_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 35)
         small_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 25)
 
-        draw_text("P1 - WARRIOR", controls_font, BLUE, 100, 150)
+        draw_text("P1 - GRIMES", controls_font, BLUE, 100, 150)
         draw_text("A / D - Move left / right", small_font, WHITE, 100, 200)
         draw_text("W - Jump", small_font, WHITE, 100, 240)
         draw_text("R - Attack 1", small_font, RED, 100, 280)
         draw_text("T - Attack 2", small_font, RED, 100, 320)
 
-        draw_text("P2 - WIZARD", controls_font, (255, 100, 0), 500, 150)
+        draw_text("P2 - SHOGGOTH", controls_font, (255, 100, 0), 500, 150)
         draw_text("Left / Right arrows - Move", small_font, WHITE, 500, 200)
         draw_text("Up arrow - Jump", small_font, WHITE, 500, 240)
         draw_text("K - Attack 1", small_font, RED, 500, 280)

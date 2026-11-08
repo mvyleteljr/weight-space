@@ -159,10 +159,11 @@
     "A jump can start only on the ground. Holding jump can start another jump after landing.",
     "There is no block, guard, parry, crouch, dash, or invulnerability action.",
     "Defense requires avoiding overlap with the attack area. Jumping does not grant invulnerability.",
-    "An attack checks for a hit only on the step when it starts, after movement and facing updates.",
-    "An attacking flag in the next observation describes an attack that has already made its hit check.",
+    "Attacks hit only during visible contact frames: Grimes attacks 1/2 and Shoggoth attack 2 on frames 4-5; Shoggoth attack 1 on frames 3-5.",
+    "Sprite-aligned attack areas require 2 horizontal and 4 vertical pixels of body overlap for Grimes blades, or 12 horizontal and 10 vertical pixels for Shoggoth arms. Each swing hits at most once.",
+    "An attacking flag includes windup, contact, and recovery. A hit cancels the target attack unless both hits occur on the same step.",
     "New movement, jump, and attack inputs are ignored while attacking or in hit recovery. Gravity continues.",
-    "Both attack types use the same hit area and damage. Both fighters can hit in the same step."
+    "All attacks deal 10 damage. Both fighters can hit in the same step."
   ],
   "version": "street-fighter-v1",
   "width": 1000

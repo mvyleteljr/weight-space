@@ -54,7 +54,9 @@ class ArenaTests(unittest.TestCase):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = 400, 500
         attack = encode_action(attack=1)
-        result = arena.step([attack, 0])
+        arena.step([attack, 0])
+        for _ in range(11):
+            result = arena.step([0, 0])
         self.assertEqual(result["rewards"], [0.1, -0.1])
         self.assertEqual(arena.fighters[1].health, 90)
         for _ in range(10):
@@ -76,7 +78,7 @@ class ArenaTests(unittest.TestCase):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = 400, 500
         arena.step([encode_action(attack=1), encode_action(jump=True)])
-        self.assertEqual(arena.fighters[1].health, 90)
+        self.assertEqual(arena.fighters[1].health, 100)  # Windup has no damage.
         arena.reset()
         arena.fighters[0].x, arena.fighters[1].x = 400, 500
         arena.step([0, encode_action(jump=True)])
@@ -87,22 +89,24 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual(arena.fighters[1].health, 100)
         self.assertEqual(arena.fighters[1].x, 490)
 
-    def test_attack_checks_hit_only_at_start(self):
+    def test_grimes_can_hit_an_opponent_entering_during_swing(self):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = 400, 700
         arena.step([encode_action(attack=1), 0])
         for _ in range(15):
             arena.step([0, encode_action(move=-1)])
         self.assertTrue(arena.fighters[0].attacking)
-        self.assertEqual(arena.fighters[1].x, 550)
-        self.assertEqual(arena.fighters[1].health, 100)
+        self.assertEqual(arena.fighters[1].health, 90)
 
     def test_simultaneous_knockout_has_no_first_player_advantage(self):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = 400, 500
         for fighter in arena.fighters:
             fighter.health = 10
-        result = arena.step([encode_action(attack=1)] * 2)
+        for fighter in arena.fighters:
+            fighter.attacking, fighter.attack_type = True, 2
+            fighter.action, fighter.frame_index, fighter.animation_tick = 4, 3, 2
+        result = arena.step([0, 0])
         self.assertTrue(result["terminated"])
         self.assertFalse(result["truncated"])
         self.assertIsNone(result["winner"])
@@ -111,11 +115,125 @@ class ArenaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             arena.step([0, 0])
 
+    def shoggoth_attack(self, grimes_x, shoggoth_x, steps=24):
+        arena = Arena()
+        arena.fighters[0].x, arena.fighters[1].x = grimes_x, shoggoth_x
+        health = []
+        for step in range(steps):
+            arena.step([0, encode_action(attack=1) if step == 0 else 0])
+            health.append(arena.fighters[0].health)
+        return arena, health
+
+    def test_shoggoth_arm_hits_during_extension_once_both_directions(self):
+        for grimes_x, shoggoth_x in [(400, 650), (650, 400)]:
+            with self.subTest(grimes_x=grimes_x):
+                arena, health = self.shoggoth_attack(grimes_x, shoggoth_x)
+                self.assertEqual(health[:8], [100]*8)  # Windup cannot hit.
+                self.assertEqual(health[8], 90)  # First extended frame makes solid contact.
+                self.assertEqual(health[-1], 90)  # No repeated damage on active frames.
+
+    def test_shoggoth_tip_requires_overlap_not_grazing(self):
+        # Max extension ends at x=769; Grimes body begins at x+8.
+        _, health = self.shoggoth_attack(750, 400)
+        self.assertEqual(health[-1], 100)  # 11px overlap is only a graze.
+        _, health = self.shoggoth_attack(749, 400)
+        self.assertEqual(health[-1], 90)  # 12px is a solid hit.
+        _, health = self.shoggoth_attack(780, 400)
+        self.assertEqual(health[-1], 100)
+
+    def test_shoggoth_arm_can_be_avoided_with_jump(self):
+        arena = Arena()
+        arena.fighters[0].x, arena.fighters[1].x = 400, 650
+        for step in range(24):
+            arena.step([encode_action(jump=True) if step == 0 else 0,
+                        encode_action(attack=1) if step == 0 else 0])
+        self.assertEqual(arena.fighters[0].health, 100)
+
+    def test_slam_and_grimes_react_on_contact_frame_in_both_directions(self):
+        for player, attack in [(2, 2), (1, 1), (1, 2)]:
+            for reversed_sides in (False, True):
+                with self.subTest(player=player, attack=attack, reversed=reversed_sides):
+                    arena = Arena()
+                    arena.fighters[0].x, arena.fighters[1].x = ((500, 400) if reversed_sides else (400, 500))
+                    actions = [0, 0]; actions[player-1] = encode_action(attack=attack)
+                    arena.step(actions)
+                    target = arena.fighters[2-player]
+                    for _ in range(10):
+                        arena.step([0, 0])
+                    self.assertEqual(target.health, 100)  # All windup frames.
+                    arena.step([0, 0])
+                    self.assertEqual(target.health, 90)
+                    self.assertEqual(target.action, 5)  # Reaction on the same rendered frame.
+                    self.assertEqual(arena.fighters[player-1].frame_index, 4)
+                    for _ in range(14): arena.step([0, 0])
+                    self.assertEqual(target.health, 90)
+
+    def test_grimes_does_not_hit_empty_space_or_raised_tentacles(self):
+        for attack in (1, 2):
+            arena = Arena()
+            arena.fighters[0].x, arena.fighters[1].x = 200, 700
+            arena.step([encode_action(attack=attack), 0])
+            for _ in range(24): arena.step([0, 0])
+            self.assertEqual(arena.fighters[1].health, 100)
+
+    def test_grimes_blade_accepts_shallow_contact_but_not_a_graze(self):
+        for attack, grazing_x in [(1, 701), (2, 625)]:
+            for overlap, expected in [(0, 100), (1, 90)]:
+                arena = Arena()
+                arena.fighters[0].x, arena.fighters[1].x = 400, grazing_x - overlap
+                arena.step([encode_action(attack=attack), 0])
+                for _ in range(23): arena.step([0, 0])
+                self.assertEqual(arena.fighters[1].health, expected)
+
+    def test_grimes_old_near_misses_now_connect(self):
+        for attack, target_x in [(1, 695), (2, 620)]:
+            arena = Arena()
+            arena.fighters[0].x, arena.fighters[1].x = 400, target_x
+            arena.step([encode_action(attack=attack), 0])
+            for _ in range(23): arena.step([0, 0])
+            self.assertEqual(arena.fighters[1].health, 90)
+
+    def test_grimes_shallow_contact_also_works_facing_left(self):
+        for attack, just_outside in [(1, 393), (2, 469)]:
+            for adjustment, expected in [(0, 100), (1, 90)]:
+                arena = Arena()
+                arena.fighters[0].x, arena.fighters[1].x = 700, just_outside + adjustment
+                arena.step([encode_action(attack=attack), 0])
+                for _ in range(23): arena.step([0, 0])
+                self.assertEqual(arena.fighters[1].health, expected)
+
+    def test_raised_tentacle_is_not_a_hurtbox(self):
+        arena = Arena()
+        grimes, shoggoth = arena.fighters
+        grimes.x, shoggoth.x = 400, 500
+        grimes.y = 100
+        grimes.attacking, grimes.attack_type = True, 1
+        grimes.action, grimes.frame_index, grimes.animation_tick = 3, 3, 2
+        shoggoth.attacking, shoggoth.attack_type = True, 2
+        shoggoth.action, shoggoth.frame_index = 4, 2
+        arena.step([0, 0])
+        self.assertEqual(shoggoth.health, 100)
+
+    def test_hit_interrupts_slam_before_contact(self):
+        arena = Arena()
+        grimes, shoggoth = arena.fighters
+        grimes.x, shoggoth.x = 400, 500
+        grimes.attacking, grimes.attack_type = True, 1
+        grimes.action, grimes.frame_index, grimes.animation_tick = 3, 3, 2
+        shoggoth.attacking, shoggoth.attack_type = True, 2
+        shoggoth.action, shoggoth.frame_index = 4, 2
+        arena.step([0, 0])
+        self.assertFalse(shoggoth.attacking)
+        for _ in range(24): arena.step([0, 0])
+        self.assertEqual(grimes.health, 100)
+
     def test_knockout_and_time_limit(self):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = 400, 500
         arena.fighters[1].health = 10
-        result = arena.step([encode_action(attack=2), 0])
+        arena.step([encode_action(attack=2), 0])
+        for _ in range(11):
+            result = arena.step([0, 0])
         self.assertEqual(result["winner"], 1)
         self.assertEqual(result["reason"], "knockout")
         arena = Arena(max_steps=1)

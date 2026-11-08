@@ -66,13 +66,15 @@ expected_action when checking behavior. Try at least two distinct situations.
 Inspect layer values when a test fails, adjust your weights, and test again.
 You must edit and test the latest revision before submit. Stop after submit.
 There are at most 40 tool calls, 12 edits, and 64 input cases. No need to use them all.
-Movement speed is 10; attacks deal 10 damage in a 160-pixel-wide forward box from
-the fighter center. Fighters are 80x180. Inputs are blocked while hit or attacking.
-Attack recovery includes a 20-frame cooldown. Jump speed is -30; gravity is 2/frame.
-Read the interface rules below. Fighters can move through each other. They turn
-toward each other automatically. You can jump and move in the air. There is no
-block action or invulnerability. Defense uses position and timing. An attack
-checks for damage only when it starts, not throughout the attack animation.
+Movement speed is 10; all attacks deal 10 damage and use sprite-aligned contact
+areas requiring body overlap: 2 horizontal and 4 vertical pixels for Grimes
+blades; 12 horizontal and 10 vertical pixels for Shoggoth arms. Grimes attacks 1/2 and Shoggoth attack 2 hit on frames 4-5;
+Shoggoth attack 1 hits on frames 3-5. Every swing can hit at most once. Windup
+and recovery cannot deal damage. Weapons and raised tentacles are not hurt areas.
+Inputs are blocked while hit or attacking. Attack recovery includes a 20-frame
+cooldown. Jump speed is -30; gravity is 2/frame. Fighters can move through each
+other and turn toward each other automatically. There is no block or invulnerability.
+A hit cancels the target attack, but both attacks can hit on the same step.
 Inputs use self then opponent then relative x, relative y, and time remaining.
 Largest output score selects the action; first index wins ties. Positive relative x
 means opponent is right. Ground contact is 1 when grounded. Both attacks can hit
