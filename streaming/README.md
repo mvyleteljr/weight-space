@@ -2,12 +2,10 @@
 
 ## Browser playback (no desktop window)
 
-The frontend can draw saved game states with the original character sprites.
-Play/pause, restart, seek, speed, game selection, and automatic next-game playback
-run in each browser. They do not control another viewer or change model weights.
-Agent reply cards update from the run records and include notes and tool results.
-Choose an edit round, or follow the latest replies. Character labels follow the
-saved assignment for each game.
+The frontend draws game states with the original character sprites. The training
+toolbar provides Start/Pause training, Start/Stop autoplay, Mute, Speed, and Reset.
+Each agent's arrows browse its saved policies; during autoplay they also select
+that agent's active network. Character labels follow the assignment for each game.
 
 ## Start new runs from the browser
 
@@ -15,20 +13,21 @@ Run the server on the host that has your Astra and Opus 5.5 CLI logins:
 
 ```sh
 docker compose -f streaming/compose.yml stop spectator
-uv run python streaming/server.py --allow-new-runs --demo runs/astra-fable-swapped-02 --port 8080
+uv run python -m streaming.server --allow-new-runs --port 8081
 ```
 
-Open http://127.0.0.1:8080. Choose the game count, then click **New run**.
-Both agents start with identical fresh random weights. Characters switch each
-game. Both agents edit after each game except the final game. The tally above
-the viewer counts completed game wins by agent, with draws shown separately.
-It can be ahead of playback if you pause or watch an earlier game.
-**Restart** only restarts playback. Saved runs remain in `runs/`.
+Open http://127.0.0.1:8081. On every server launch or **Reset**, both agents start
+with identical zeroed 33–8–18 policies and new conversations. Prior weights,
+architectures, recurrent state, action feedback, scores, and game context are not
+restored. The agents can initialize weights or redesign their networks, then
+**Start training** becomes available. Click it to begin the 10-minute session.
+Every game is shown before the next agent update. Characters are assigned randomly.
+Saved runs remain archived in `runs/`.
 
-Only one run can be active. The launcher uses a fixed uv command; browser input
-can set only the game count (2 to 9). It requires a local address, same-origin
+Only one run can be active. The launcher uses a fixed uv command and requires a local address, same-origin
 request, and a session token. CLI credentials stay on the host. Docker playback
-does not enable this launcher. Omit `--demo` to restore the last browser run.
+does not enable this launcher. With `--allow-new-runs`, saved `--demo` selections,
+`WEIGHT_SPACE_DEMO`, and the last-run pointer cannot restore an old training run.
 
 ## View existing runs
 

@@ -281,6 +281,8 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                   continue_run=False):
     if type(games) is not int or not 2 <= games <= 9:
         raise ValueError("Choose 2 to 9 games.")
+    if zero_initial and (resume_from is not None or continue_run):
+        raise ValueError('Zero initialization cannot restore a previous run.')
     if random_sides and (swap_sides or paired_games):
         raise ValueError("Random assignments cannot be combined with fixed side swaps or paired games.")
     if paired_games and (not swap_sides or games < 4 or games % 2):

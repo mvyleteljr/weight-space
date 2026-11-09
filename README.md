@@ -122,11 +122,11 @@ The frontend now includes browser playback controls and agent reply cards. Selec
 a run with `uv run python streaming/server.py --demo runs/YOUR_RUN --port 8081`,
 then open http://127.0.0.1:8081. No desktop viewer is required. See
 [browser playback](streaming/README.md) for Docker setup and the optional HLS mode.
-Add `--allow-new-runs` to enable the **New run** button on the local host.
-Choose 2 to 9 games. Each run starts Astra and Opus 5.5 from identical fresh random
-weights, switches characters each game, and lets both agents edit after each game
-except the final game. The tally counts agent wins and shows draws separately.
-**Restart** only restarts playback of the selected game.
+For training, run `uv run python -m streaming.server --allow-new-runs --port 8081`.
+Every server launch and **Reset** starts both agents from identical zeroed weights
+and fresh conversations. The agents initialize their policies before **Start training**
+is enabled. Characters are assigned randomly each game. The tally counts agent wins
+and draws. Saved `--demo` selections and `WEIGHT_SPACE_DEMO` are ignored in training mode.
 
 Astra and Opus 5.5 receive match results, sampled gameplay evidence, and their
 current weights. Each returns one policy proposal; the next game evaluates it.
@@ -432,6 +432,10 @@ context and can initialize weights or redesign their network. **Initializing…*
 is disabled until both agents submit their first policies. **Start training** then begins
 the 10-minute training session. Initialization failure keeps Start disabled; Reset
 retries with a fresh session.
+Cold training launches never restore the last-run pointer, saved architectures,
+recurrent state, action feedback, or agent conversation IDs. Prior run files remain
+archived in `runs/`; they are not included in the fresh agents' context. Weights may
+be nonzero once the agents finish their new initialization proposals.
 
 Every game appears automatically, in order. Speed changes how fast the game is
 shown. The training button becomes **Pause training** while running; **Start training** resumes it. An agent update already underway can finish, but the next game waits for resume. There are no replay, seeking, or game-selection controls. The trainer

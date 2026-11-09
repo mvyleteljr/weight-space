@@ -426,14 +426,29 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             super().log_message(format, *args)
 
 
+def configure_runs(server, repo, *, allow_new_runs=False, demo=None):
+    """Cold training launches always reset; saved-run selection is read-only."""
+    server.run_manager = None
+    if allow_new_runs:
+        from streaming.run_control import RunManager
+        # Never restore --demo, WEIGHT_SPACE_DEMO, or .frontend-current.json into
+        # a new training process. Reset and cold launch share zero initialization.
+        server.run_manager = RunManager(repo)
+        server.run_manager.prepare()
+        server.replay_store = ReplayStore(server.run_manager.directory)
+    else:
+        server.replay_store = ReplayStore(demo) if demo else None
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--hls-origin", default="http://127.0.0.1:8888")
-    parser.add_argument("--demo", type=Path, default=os.environ.get("WEIGHT_SPACE_DEMO"))
+    parser.add_argument("--demo", type=Path, default=os.environ.get("WEIGHT_SPACE_DEMO"),
+                        help="Saved run for read-only viewing; ignored with --allow-new-runs.")
     parser.add_argument("--assets", type=Path, default=WEB.parent.parent / "Street_Fighter/assets/images")
-    parser.add_argument("--allow-new-runs", action="store_true", help="Enable the fixed Astra/Opus 5.5 launcher on this host.")
+    parser.add_argument("--allow-new-runs", action="store_true", help="Start fresh zeroed Astra/Opus 5.5 policies and enable local training controls.")
     args = parser.parse_args()
     if args.allow_new_runs and args.bind not in ("127.0.0.1", "localhost"):
         parser.error("Run creation requires a loopback bind address.")
@@ -442,17 +457,12 @@ if __name__ == "__main__":
         parser.error("--hls-origin must be an HTTP(S) origin without a path")
     server = ThreadingHTTPServer((args.bind, args.port), SpectatorHandler)
     server.hls_origin = args.hls_origin.rstrip("/")
-    server.replay_store = ReplayStore(args.demo) if args.demo else None
     server.assets_root = args.assets.resolve()
-    server.run_manager = None
     if args.allow_new_runs:
         # Host execution preserves the CLI subscription login; no credentials enter Docker or the browser.
         import sys
         sys.path.insert(0, str(WEB.parent.parent))
-        from streaming.run_control import RunManager
-        server.run_manager = RunManager(WEB.parent.parent, args.demo)
-        if not args.demo:
-            server.run_manager.prepare()
+    configure_runs(server, WEB.parent.parent, allow_new_runs=args.allow_new_runs, demo=args.demo)
     print(f"Spectator page: http://{args.bind}:{args.port}", flush=True)
     try:
         server.serve_forever()

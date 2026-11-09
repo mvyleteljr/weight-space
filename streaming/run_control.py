@@ -33,6 +33,7 @@ class RunManager:
 
     def _ready(self):
         from weight_space.network import initialize, save
+        self.continuing = False
         name = "ready-" + secrets.token_hex(6)
         self.directory = self.runs / name
         self.directory.mkdir()
@@ -188,6 +189,7 @@ class RunManager:
                 process = subprocess.Popen(command, cwd=self.repo, stdin=subprocess.DEVNULL,
                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             self.process, self.directory = process, directory
+            self.continuing = False
             self.placeholder = {"phase": "initializing", "seed": seed, "games_requested": games,
                                 "games": [], "edit_rounds": [], "swap_sides": False, "random_sides": True, "paired_games": False,
                                 "tally": {"wins": [0, 0], "draws": 0, "games": 0},
