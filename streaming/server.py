@@ -229,7 +229,7 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             except (URLError, TimeoutError, OSError):
                 self.send_error(503, "Stream is reconnecting")
             return
-        filename = {"/": "index.html", "/app.js": "app.js", "/status.js": "status.js", "/style.css": "style.css"}.get(path)
+        filename = {"/": "index.html", "/app.js": "app.js", "/status.js": "status.js", "/network.js": "network.js", "/style.css": "style.css"}.get(path)
         if filename is None:
             self.send_error(404)
             return

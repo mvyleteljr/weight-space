@@ -122,71 +122,6 @@ function animate(now) {
   requestAnimationFrame(animate);
 }
 
-function architectureDiagram(architecture) {
-  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
-  const layers = [{width:architecture.inputs, type:'input'}, ...architecture.layers];
-  const width = Math.max(280, layers.length * 95);
-  const span = Math.max(...layers.map(l => l.width)) * 10;
-  const height = span + 110;
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.style.minWidth = `${width}px`;
-  svg.setAttribute('role', 'group');
-  svg.setAttribute('aria-label', 'Policy network: ' + layers.map(l => `${l.width} ${l.type} ${l.activation || ''}`).join(' → '));
-  const add = (tag, attrs, text, parent=svg) => {
-    const node = document.createElementNS(ns, tag);
-    Object.entries(attrs).forEach(([k,v]) => node.setAttribute(k, String(v)));
-    if (text !== undefined) node.textContent = text;
-    parent.append(node); return node;
-  };
-  const xs = layers.map((_,i) => 45 + i * (width-90)/(layers.length-1));
-  const y = (layer,id) => 55 + (span - (layers[layer].width-1)*10)/2 + id*10;
-  // Layer links give an uncluttered overview. Inspect one neuron for actual weights.
-  for (let i=1; i<layers.length; i++) {
-    add('path',{d:`M ${xs[i-1]+10} ${55+span/2} H ${xs[i]-10}`,stroke:'#384653','stroke-width':1,fill:'none'});
-  }
-  const edges = add('g', {});
-  // Normalize against the entire destination layer, not just the selected neuron.
-  const layerMaxima = architecture.layers.map(layer =>
-    Math.max(0, ...(layer.connections || []).map(edge => Math.abs(edge.weight))));
-  const inspect = (li,id) => {
-    edges.replaceChildren();
-    architecture.layers.forEach((layer,k) => {
-      const to = k+1;
-      for (const edge of layer.connections || []) {
-        if (!((li === to && edge.to === id) || (li === k && edge.from === id))) continue;
-        const brightness = Math.round(55 + 200 * (layerMaxima[k] ? Math.abs(edge.weight) / layerMaxima[k] : 0));
-        const d = `M ${xs[k]+4} ${y(k,edge.from)} L ${xs[to]-4} ${y(to,edge.to)}`;
-        const label = `L${k} W[${edge.to}][${edge.from}] = ${edge.weight}`;
-        const group = add('g', {}, undefined, edges);
-        add('path',{d,stroke:`rgb(${brightness}, ${brightness}, ${brightness})`,
-          'stroke-width':1.2,fill:'none','pointer-events':'none'}, undefined, group);
-        const hit = add('path',{d,stroke:'transparent','stroke-width':6,fill:'none',
-          'pointer-events':'stroke','aria-label':label,class:'network-weight-hit'}, undefined, group);
-        add('title',{},label,hit);
-      }
-    });
-  };
-  layers.forEach((layer,i) => {
-    const x=xs[i], output=i===layers.length-1;
-    add('text',{x,y:19,'text-anchor':'middle',class:'network-label'},i===0 ? 'INPUT' : output ? 'OUTPUT' : `L${i-1} · ${layer.type.toUpperCase()}`);
-    add('text',{x,y:38,'text-anchor':'middle',class:'network-count'},String(layer.width));
-    for (let id=0; id<layer.width; id++) {
-      const circle=add('circle',{cx:x,cy:y(i,id),r:3,fill:layer.type==='recurrent' ? '#cb98eb' : '#8ac7ee',
-        tabindex:0,role:'button','aria-label':i===0 ? (architecture.action_feedback && id===31 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id}`,class:'network-neuron'});
-      add('title',{},i===0 ? (architecture.action_feedback && id===31 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id} · bias ${layer.biases?.[id] ?? 'unavailable'}`,circle);
-      circle.addEventListener('mouseenter',()=>inspect(i,id));
-      circle.addEventListener('focus',()=>inspect(i,id));
-      circle.addEventListener('click',()=>inspect(i,id));
-    }
-    if (layer.type==='recurrent') {
-      add('path',{d:`M ${x+8} ${55+span} C ${x+34} ${55+span} ${x+34} 55 ${x+8} 55 l 4 -3 m -4 3 l 4 3`,fill:'none',stroke:'#cb98eb','stroke-width':1});
-    }
-    add('text',{x,y:height-25,'text-anchor':'middle',class:'network-label'},layer.activation || 'features');
-    add('text',{x,y:height-9,'text-anchor':'middle',class:'network-index'},i ? `${layer.parameters.toLocaleString()} params` : 'per tick');
-  });
-  svg.addEventListener('mouseleave',()=>edges.replaceChildren());
-  return svg;
-}
 function renderPolicies(data) {
   policyData = data;
   const key = JSON.stringify([data, historySelection]); if (key === replyKey) { document.querySelectorAll('.reply-card-top .badge').forEach((badge,i) => { badge.textContent = agentProgress(data.agents[i].agent, demo?.phase); }); return; } replyKey = key;
@@ -212,7 +147,7 @@ function renderPolicies(data) {
     nav.append(previous, next, live);
     card.append(nav, element('p', `${snapshot.after_game === 0 ? 'Before game 1' : `After game ${snapshot.after_game}`} · ${snapshot.stage}`, 'reply-meta'));
     const diagram = element('div', undefined, 'policy-diagram'); diagram.append(architectureDiagram(arch)); card.append(diagram);
-    card.append(element('p', 'Select neuron · brighter = larger |weight| within layer · hover line for signed value', 'network-legend'));
+    card.append(element('p', 'Select a neuron · hover a connection for its weight', 'network-legend'));
     card.append(element('p', `${arch.parameters.toLocaleString()} parameters · ${arch.memory_size} memory values`, 'policy-stats'));
     const log = element('div', undefined, 'reply-log'); log.tabIndex = 0;
     log.setAttribute('aria-label', `${agent.name} public notes for selected update`);

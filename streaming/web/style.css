@@ -49,3 +49,5 @@ h2,h3{margin:0;font-size:15px;font-weight:600}.tag{font-size:10px;color:#a3ad9b}
 .network-neuron{cursor:crosshair;outline:none}.network-neuron:hover,.network-neuron:focus{stroke:#fff;stroke-width:2}
 
 .control-row #status{margin-left:auto;font-size:12px}
+
+.policy-diagram svg{min-height:0;color:#b3c4d0}.network-count{font-size:11px;font-weight:400}.network-label{font-size:11px}.network-neuron[aria-pressed=true]{fill:#fff;stroke:#84b7d5;stroke-width:2}.network-neuron:focus{outline:none;stroke:#fff;stroke-width:2}.network-weight-hit:hover{stroke:#c0c0c0;stroke-opacity:.35}
