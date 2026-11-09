@@ -41,13 +41,19 @@ class Autoplay:
         if policies is not None:
             if self.latest and policies == self.selections:
                 return self.latest
-            # Resolve and validate both before changing either network.
-            latest = current_models(self.history.directory, self.history.status())
-            models = [load(self.directory / f'agent-{i+1}.json') if selection == self.selections[i]
-                      else load(latest[i]) if selection is None else self.history.policy_model(i, selection)
-                      for i, selection in enumerate(policies)]
-            for i, model in enumerate(models, 1):
-                save(self.directory / f'agent-{i}.json', model)
+            # Indices are agent identities, not character slots. Resolve all
+            # requested edits first; never rewrite the untouched agent's file.
+            updates = {}
+            for i, selection in enumerate(policies):
+                if selection == self.selections[i]:
+                    continue
+                if selection is None:
+                    latest = current_models(self.history.directory, self.history.status())
+                    updates[i] = load(latest[i])
+                else:
+                    updates[i] = self.history.policy_model(i, selection)
+            for i, model in updates.items():
+                save(self.directory / f'agent-{i+1}.json', model)
             self.selections = list(policies)
         tally = self.status['tally']
         if self.number and policies is None:

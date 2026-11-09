@@ -124,6 +124,44 @@ class AutoplayTests(unittest.TestCase):
             (self.root/'demo.json').write_text(json.dumps(self.status))
             with self.assertRaises(RunBusyError): self.manager.autoplay_game()
 
+    def test_each_agents_arrows_preserve_the_other_model_in_both_character_orders(self):
+        historic = [initialize([33, 2, 18], zero=True), initialize([33, 4, 18], zero=True)]
+        later = [initialize([33, 8, 18], zero=True) for _ in range(2)]
+        for i in range(2):
+            historic[i]['layers'][-1]['bias'][3 if i == 0 else 8] = 1
+            later[i]['layers'][-1]['bias'][4 if i == 0 else 15] = 1
+            save(self.root/f'edit-0/lab-{i+1}/revision-0.json', historic[i])
+        self.manager.pause(True)
+        for swapped in (0, 1):
+            for changed in (0, 1):
+                with self.subTest(swapped=swapped, changed_agent=changed+1), \
+                     patch('weight_space.tool_loop.complete') as llm, \
+                     patch('streaming.autoplay.secrets.randbits', return_value=swapped):
+                    for i in range(2): save(self.root/f'edit-0/player-{i+1}.json', self.models[i])
+                    first = self.manager.autoplay_game()
+                    session = first['session']
+                    order = first['game']['player_agents']
+                    other = 1-changed
+                    untouched = self.manager.autoplay.directory/f'agent-{other+1}.json'
+                    before = untouched.read_bytes(), untouched.stat().st_mtime_ns
+                    # New training replies do not replace untouched frozen models.
+                    for i in range(2): save(self.root/f'edit-0/player-{i+1}.json', later[i])
+                    selections = [None, None]
+                    selections[changed] = '0:start'
+                    for after, policies, chosen in ((1, selections, historic[changed]), (2, [None,None], later[changed])):
+                        response = self.manager.autoplay_game(session, after, policies)
+                        game = response['game']
+                        self.assertEqual(game['player_agents'], order)
+                        self.assertEqual((untouched.read_bytes(), untouched.stat().st_mtime_ns), before)
+                        expected = list(self.models); expected[changed] = chosen
+                        for slot, agent_id in enumerate(order):
+                            expected_hash = fingerprint(expected[agent_id-1])
+                            self.assertEqual(game['result']['models'][slot]['sha256'], expected_hash)
+                            self.assertEqual(game['networks'][slot]['sha256'], expected_hash)
+                            outputs = expected[agent_id-1]['layers'][-1]['bias']
+                            self.assertEqual(game['activity'][0][slot]['action'], outputs.index(max(outputs)))
+                    llm.assert_not_called()
+
     def test_reset_invalidates_session(self):
         self.manager.pause(True)
         first=self.manager.autoplay_game()

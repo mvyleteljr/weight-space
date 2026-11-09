@@ -246,12 +246,16 @@ function renderPolicies(data) {
     top.append(heading, element('span', autoMode ? 'Autoplay' : agentProgress(agent, demo?.phase), 'badge'));
     card.append(top);
     if (!snapshots.length) { card.append(element('p', 'Waiting for the first policy…')); return card; }
-    let index = historySelection[agentIndex] === null ? snapshots.length - 1 : snapshots.findIndex(s => s.id === historySelection[agentIndex]);
+    const slot = policySlot(replay, agentIndex);
+    // An agent's current autoplay model stays pinned while the other agent's
+    // selection loads, even if a pending training reply has added newer history.
+    const live = liveGame && slot >= 0 && (autoMode ? !!replay.policy_selections &&
+      replay.policy_selections[agentIndex] === historySelection[agentIndex] : historySelection[agentIndex] === null);
+    let index = historySelection[agentIndex] === null ?
+      (autoMode && live ? snapshots.findLastIndex(s => s.architecture.sha256 === replay.networks[slot].sha256) : snapshots.length - 1) :
+      snapshots.findIndex(s => s.id === historySelection[agentIndex]);
     if (index < 0) index = snapshots.length - 1;
     const snapshot = snapshots[index];
-    const slot = policySlot(replay, agentIndex);
-    const live = liveGame && slot >= 0 && (autoMode ? !autoLoading &&
-      (replay.policy_selections?.[agentIndex] ?? null) === historySelection[agentIndex] : historySelection[agentIndex] === null);
     const arch = live ? replay.networks[slot] : snapshot.architecture;
     const nav = element('div', undefined, 'policy-nav');
     const previous = element('button', '←'), next = element('button', '→');
@@ -260,7 +264,7 @@ function renderPolicies(data) {
     previous.disabled = index === 0; next.disabled = index === snapshots.length - 1;
     previous.onclick = () => selectPolicy(agentIndex, snapshots[index-1].id);
     next.onclick = () => selectPolicy(agentIndex, index+1 === snapshots.length-1 ? null : snapshots[index+1].id);
-    const gameNumber = historySelection[agentIndex] === null ?
+    const gameNumber = !autoMode && historySelection[agentIndex] === null ?
       (live ? selected : demo?.tally?.games ?? demo?.games?.length ?? snapshot.after_game) : snapshot.after_game;
     nav.append(previous, next, element('span', `game ${gameNumber}`, 'policy-game'));
     heading.append(nav);

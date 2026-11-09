@@ -453,7 +453,9 @@ Autoplay until training is paused again. Only the last two exhibition games are
 retained for playback, keeping long sessions bounded. In Autoplay, the existing
 history arrows select that agent’s saved network and restart the current matchup
 without scoring the interrupted game. Each agent can use a different revision;
-the rightmost position restores its latest network. During training the arrows
+changing one leaves the other's frozen network unchanged, including during loading
+and character swaps. Each card's game label identifies its policy's training game,
+not the autoplay match count. The rightmost position restores its latest network. During training the arrows
 only browse history. No training weights are overwritten. After the 10-minute limit,
 **Start training** continues the same run for another 10 minutes, retaining its
 accepted networks, scores, and game history. The agents receive their own saved
