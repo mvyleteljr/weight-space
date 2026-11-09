@@ -3,7 +3,7 @@ function architectureDiagram(architecture) {
   const layers = [{width:architecture.inputs, type:'input'}, ...architecture.layers];
   const width = Math.max(400, layers.length * 125);
   const span = Math.max(160, Math.max(...layers.map(l => l.width)) * 5);
-  const height = span + 85;
+  const height = span + 110;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.style.minWidth = `${Math.min(width, 400)}px`;
   svg.setAttribute('role', 'group');
@@ -59,7 +59,7 @@ function architectureDiagram(architecture) {
       circle.addEventListener('click',()=>inspect(i,id));
     }
     if (layer.type==='recurrent') {
-      add('path',{d:`M ${x+8} ${55+span} C ${x+34} ${55+span} ${x+34} 55 ${x+8} 55 l 4 -3 m -4 3 l 4 3`,fill:'none',stroke:'#cb98eb','stroke-width':1});
+      add('path',{d:`M ${x+8} ${55+span} C ${x+34} ${55+span} ${x+34} 55 ${x+8} 55 l 4 -3 m -4 3 l 4 3`,fill:'none',stroke:'#aaa','stroke-width':1});
     }
     add('text',{x,y:height-25,'text-anchor':'middle',class:'network-label'},i ? (layer.type==='recurrent' ? 'Recurrent · memory' : 'Dense') : 'Observation');
 

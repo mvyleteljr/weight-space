@@ -144,7 +144,7 @@ function renderPolicies(data) {
     if (index < 0) index = snapshots.length - 1;
     const snapshot = snapshots[index], arch = snapshot.architecture;
     const nav = element('div', undefined, 'policy-nav');
-    const previous = element('button', '←'), next = element('button', '→'), live = element('button', 'Live');
+    const previous = element('button', '←'), next = element('button', '→'), live = element('button', 'Latest');
     previous.setAttribute('aria-label', `${agent.name}: previous policy update`);
     next.setAttribute('aria-label', `${agent.name}: next policy update`);
     live.setAttribute('aria-label', `${agent.name}: follow live updates`);
