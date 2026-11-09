@@ -103,8 +103,8 @@ if __name__ == "__main__":
     # Load Assets
     bg_image = pygame.image.load(resource_path("assets/images/bg1.jpg")).convert()
     victory_img = pygame.image.load(resource_path("assets/images/victory.png")).convert_alpha()
-    warrior_victory_img = pygame.image.load(resource_path("assets/images/grimes-sprites.png")).convert_alpha()
-    wizard_victory_img = pygame.image.load(resource_path("assets/images/shoggoth-sprites.png")).convert_alpha()
+    warrior_victory_img = pygame.image.load(resource_path("assets/images/grimes-sprites-large.png")).convert_alpha()
+    wizard_victory_img = pygame.image.load(resource_path("assets/images/shoggoth-sprites-large.png")).convert_alpha()
 
     # Fonts
     menu_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 50)
@@ -123,21 +123,22 @@ if __name__ == "__main__":
     magic_fx.set_volume(0.75)
 
     # Load Fighter Spritesheets
-    warrior_sheet = pygame.image.load(resource_path("assets/images/grimes-sprites.png")).convert_alpha()
-    wizard_sheet = pygame.image.load(resource_path("assets/images/shoggoth-sprites.png")).convert_alpha()
+    warrior_sheet = pygame.image.load(resource_path("assets/images/grimes-sprites-large.png")).convert_alpha()
+    wizard_sheet = pygame.image.load(resource_path("assets/images/shoggoth-sprites-large.png")).convert_alpha()
 
     # Define Animation Steps
     WARRIOR_ANIMATION_STEPS = [10, 8, 1, 7, 7, 3, 7]
     WIZARD_ANIMATION_STEPS = [8, 8, 1, 8, 8, 3, 7]
 
     # Fighter Data
-    WARRIOR_SIZE = 162
-    WARRIOR_SCALE = 4
-    WARRIOR_OFFSET = [72, 46]
+    # Preserve the 648px rendered frame and existing arena alignment.
+    WARRIOR_SIZE = 500
+    WARRIOR_SCALE = 648 / WARRIOR_SIZE
+    WARRIOR_OFFSET = [144 * WARRIOR_SIZE / 324, 92 * WARRIOR_SIZE / 324]
     WARRIOR_DATA = [WARRIOR_SIZE, WARRIOR_SCALE, WARRIOR_OFFSET]
-    WIZARD_SIZE = 250
-    WIZARD_SCALE = 3
-    WIZARD_OFFSET = [112, 97]
+    WIZARD_SIZE = 500
+    WIZARD_SCALE = 1.5
+    WIZARD_OFFSET = [224, 194]
     WIZARD_DATA = [WIZARD_SIZE, WIZARD_SCALE, WIZARD_OFFSET]
 
     # Game Variables
@@ -439,8 +440,8 @@ def game_loop():
             victory_screen(winner_img)
             return
 
-        fighter_1.draw(screen)
         fighter_2.draw(screen)
+        fighter_1.draw(screen)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -460,8 +461,8 @@ if __name__ == "__main__":
         for _ in range(10):
             arena.step([0, 0])
             draw_bg(bg_image, is_game_started=True)
-            fighter_1.draw(screen)
             fighter_2.draw(screen)
+            fighter_1.draw(screen)
         draw_bg(bg_image)
         pygame.quit()
         print("Game display smoke test passed.")

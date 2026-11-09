@@ -87,7 +87,22 @@ from hurt areas. Each swing can hit once; windup and recovery cannot hit.
 `attack_connected` records that a swing already landed. Damage and the target's
 hit-reaction animation occur on the same rendered frame. Hits interrupt an
 opponent's attack, except that simultaneous contact still damages both fighters.
-All attacks deal 10 damage. Observation dimensions and action IDs are unchanged.
+Attack balance:
+
+| Attack | Damage | Recovery after animation |
+| --- | ---: | ---: |
+| Grimes R (1) | 10 | 12 frames / 0.20 seconds |
+| Grimes T (2) | 12 | 18 frames / 0.30 seconds |
+| Shoggoth K (1) | 14 | 30 frames / 0.50 seconds |
+| Shoggoth L (2) | 18 | 42 frames / 0.70 seconds |
+
+Recovery blocks movement, jumping, and new attacks for the full listed number of
+simulation steps, on hits and misses alike. Gravity and landing still run. An
+interrupted attack starts its recovery when hit; finishing a hit reaction does
+not reset or remove the remaining recovery. Receiving a hit while idle does not
+add an attack recovery penalty. The observation retains `attack_cooldown/20` for
+compatibility; values can now exceed 1. Observation dimensions and action IDs
+are unchanged.
 
 ## Timing and game rules
 
@@ -140,3 +155,29 @@ A display smoke test can run without opening a window:
 ```sh
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy uv run --no-project --python 3.13 --with-requirements Street_Fighter/docs/requirements.txt python Street_Fighter/src/main.py --smoke-test
 ```
+
+### Learning-agent information
+
+Both weight-editing modes expose all 18 actions, including separate attack 1
+(Grimes R / Shoggoth K) and attack 2 (Grimes T / Shoggoth L). Their prompts and
+`info` interface use `learning_specification()`, which omits combat tuning tables,
+exact damage/recovery rules, and game source. The full developer specification
+remains in match manifests for reproducibility, but is not sent to the agents.
+Recorded health changes, animation state, and current cooldown observations stay
+available so agents can infer attack behavior from gameplay. Existing observation
+normalization and network dimensions are unchanged. Start a fresh run to avoid
+carrying forward explanations learned under the old, fully disclosed interface.
+
+### Solid bodies and crossovers
+
+Grimes and Shoggoth now have stable solid body regions separate from attack
+hitboxes. Grounded fighters cannot pass through each other; landing overlap
+separates them, including at arena walls. Grimes renders in front of decorative
+tentacles in keyboard play and both replay viewers.
+
+Grimes jumps at -42 px/tick and moves at 14 px/tick in the air to clear Shoggoth's
+body. Shoggoth waits 12 ticks (0.2 seconds) before facing a crossed opponent and
+finishes an active attack before turning. Its forward punch (K / attack 1) applies
+knockback on confirmed contact only, clamped to stage boundaries. These rules
+are shared by human play and training; the agent-facing interface still omits
+combat tuning values.

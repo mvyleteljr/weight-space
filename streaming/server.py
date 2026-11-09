@@ -76,6 +76,79 @@ class ReplayStore:
         return {"after_game": after, "agents": records}
 
 
+    def policy_history(self):
+        from weight_space.network import architecture, load
+        status = self.status()
+        rounds = sorted({entry["after_game"] for entry in status.get("edit_rounds", [])}
+                        | ({status["editing_after_game"]} if status.get("editing_after_game") is not None else set()))
+        histories = []
+        for index, agent in enumerate(status.get("agents", []), 1):
+            snapshots = []
+            requests = []
+            for after in rounds:
+                folder = (self.directory if after == 1 else self.directory / f"edit-{after}") / f"lab-{index}"
+                request_path = folder / "context-requests.json"
+                if request_path.exists():
+                    requests.extend(json.loads(request_path.read_text()))
+                start = folder / "revision-0.json"
+                if not start.exists():
+                    continue
+                round_agents = next((r["agents"] for r in status.get("edit_rounds", []) if r["after_game"] == after), status["agents"])
+                outcome = round_agents[index-1].get("status", "waiting")
+                summaries = {}
+                def summary(revision):
+                    if revision not in summaries:
+                        path = folder / f"revision-{revision}.json"
+                        # Revision files are immutable after publication.
+                        cache_key = (str(path), path.stat().st_mtime_ns)
+                        with self.lock:
+                            if cache_key not in self.cache:
+                                self.cache[cache_key] = architecture(load(path), include_connections=True)
+                            summaries[revision] = self.cache[cache_key]
+                    return summaries[revision]
+                revision = 0
+                snapshots.append({"id": f"{after}:start", "after_game": after, "turn": 0,
+                                  "revision": 0, "architecture": summary(0), "stage": "starting policy",
+                                  "note": "Policy carried into this editing round.", "calls": []})
+                path = folder / "replies.json"
+                replies = json.loads(path.read_text()) if path.exists() else []
+                for reply in replies:
+                    calls = reply.get("calls", [])
+                    for ci, call in enumerate(calls or [{}]):
+                        result = call.get("result") or {}
+                        result = result if isinstance(result, dict) else {}
+                        value = result.get("revision")
+                        if type(value) is int and value >= 0 and (folder / f"revision-{value}.json").exists():
+                            revision = value
+                        tool = call.get("tool", "reply")
+                        stage = "candidate"
+                        if tool == "submit" and result and "error" not in result:
+                            stage = "submitted"
+                        elif tool in ("test_inputs", "test_sequence") and "cases" in result:
+                            stage = "tested candidate"
+                        if outcome in ("kept_previous", "failed", "stopped") and stage != "submitted":
+                            stage = "not adopted" if revision else "starting policy"
+                        args = call.get("arguments", {})
+                        snapshots.append({"id": f"{after}:{reply['turn']}:{ci}", "after_game": after,
+                            "turn": reply["turn"], "revision": revision, "architecture": summary(revision),
+                            "stage": stage, "note": reply.get("note", ""),
+                            "calls": [{"tool": tool, "reason": args.get("reason"),
+                                       "updates": len(args.get("updates", [])), "error": result.get("error"),
+                                       "done": call.get("result") is not None,
+                                       "tests": [{key: c.get(key) for key in ("action", "expected_action", "matches_expected")}
+                                                 for c in result.get("cases", [])]}]})
+            if not snapshots:
+                path = self.directory / f"initial-agent-{index}.json"
+                if not path.exists():
+                    path = self.directory / "initial.json"
+                if path.exists():
+                    snapshots.append({"id": "initial", "after_game": 0, "turn": 0, "revision": 0,
+                        "architecture": architecture(load(path), include_connections=True), "stage": "starting policy",
+                        "note": "Zeroed policy. Initializing agents.", "calls": []})
+            histories.append({"agent": agent, "snapshots": snapshots, "context_requests": requests})
+        return {"agents": histories}
+
+
 class SpectatorHandler(BaseHTTPRequestHandler):
     def send_json(self, value):
         body = json.dumps(value, allow_nan=False).encode()
@@ -98,8 +171,9 @@ class SpectatorHandler(BaseHTTPRequestHandler):
                 if manager.directory and (self.server.replay_store is None or self.server.replay_store.directory != manager.directory):
                     self.server.replay_store = ReplayStore(manager.directory)
                 if path == "/api/run":
-                    self.send_json({"run": manager.directory.name if manager.directory else None,
-                                    "demo": manager.status(), "can_start": not manager.active(), "run_token": manager.token})
+                    from Street_Fighter.src.arena import Arena
+                    self.send_json({"initial_state": Arena(max_steps=1800).state(), "run": manager.directory.name if manager.directory else None,
+                                    "demo": manager.status(), "can_start": manager.status().get("phase") == "ready" and manager.process is not None and manager.process.poll() is None, "run_token": manager.token})
                     return
             store = getattr(self.server, "replay_store", None)
             if store is None:
@@ -108,8 +182,10 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             try:
                 if path == "/api/run":
                     self.send_json({"run": store.directory.name, "demo": store.status(), "can_start": False})
-                elif re.fullmatch(r"/api/games/[1-9]", path):
+                elif re.fullmatch(r"/api/games/[1-9][0-9]{0,4}", path):
                     self.send_json(store.game(int(path.rsplit("/", 1)[1])))
+                elif path == "/api/policy-history":
+                    self.send_json(store.policy_history() if (store.directory / "demo.json").exists() else {"agents": []})
                 elif path == "/api/replies":
                     query = parse_qs(urlsplit(self.path).query)
                     self.send_json(store.replies(int(query.get("after", ["0"])[0])))
@@ -118,8 +194,8 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             except (ValueError, FileNotFoundError):
                 self.send_error(404, "Replay data is not ready")
             return
-        assets = {"/assets/background.jpg": "bg1.jpg", "/assets/grimes-sprites.png": "grimes-sprites.png",
-                  "/assets/shoggoth-sprites.png": "shoggoth-sprites.png"}
+        assets = {"/assets/background.jpg": "bg1.jpg", "/assets/grimes-sprites-large.png": "grimes-sprites-large.png",
+                  "/assets/shoggoth-sprites-large.png": "shoggoth-sprites-large.png"}
         if path in assets:
             asset = self.server.assets_root / assets[path]
             if not asset.is_file():
@@ -153,7 +229,7 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             except (URLError, TimeoutError, OSError):
                 self.send_error(503, "Stream is reconnecting")
             return
-        filename = {"/": "index.html", "/app.js": "app.js", "/style.css": "style.css"}.get(path)
+        filename = {"/": "index.html", "/app.js": "app.js", "/status.js": "status.js", "/style.css": "style.css"}.get(path)
         if filename is None:
             self.send_error(404)
             return
@@ -167,7 +243,7 @@ class SpectatorHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         manager = getattr(self.server, "run_manager", None)
-        if self.path != "/api/runs" or manager is None:
+        if self.path not in ("/api/runs", "/api/reset", "/api/game-finished", "/api/pause", "/api/resume") or manager is None:
             self.send_error(403, "Run creation is not enabled")
             return
         from streaming.run_control import RunBusyError
@@ -183,9 +259,18 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             if not 0 < length <= 1024:
                 raise ValueError("Invalid request size.")
             body = json.loads(self.rfile.read(length))
-            if not isinstance(body, dict) or set(body) != {"games"}:
-                raise ValueError("Supply only the game count.")
-            directory = manager.start(body["games"])
+            if self.path == "/api/game-finished":
+                if not isinstance(body, dict) or set(body) != {"run", "game"}:
+                    raise ValueError("Supply the run and game.")
+                manager.game_finished(body["run"], body["game"])
+                self.send_json({"ok": True})
+                return
+            if body != {}:
+                raise ValueError("No options are required.")
+            if self.path in ("/api/pause", "/api/resume"):
+                directory = manager.pause(self.path == "/api/pause")
+            else:
+                directory = manager.reset() if self.path == "/api/reset" else manager.start()
             self.server.replay_store = ReplayStore(directory)
             self.send_json({"run": directory.name})
         except RunBusyError as error:
@@ -206,7 +291,7 @@ if __name__ == "__main__":
     parser.add_argument("--hls-origin", default="http://127.0.0.1:8888")
     parser.add_argument("--demo", type=Path, default=os.environ.get("WEIGHT_SPACE_DEMO"))
     parser.add_argument("--assets", type=Path, default=WEB.parent.parent / "Street_Fighter/assets/images")
-    parser.add_argument("--allow-new-runs", action="store_true", help="Enable the fixed Astra/Fable launcher on this host.")
+    parser.add_argument("--allow-new-runs", action="store_true", help="Enable the fixed Astra/Opus 5.5 launcher on this host.")
     args = parser.parse_args()
     if args.allow_new_runs and args.bind not in ("127.0.0.1", "localhost"):
         parser.error("Run creation requires a loopback bind address.")
@@ -224,6 +309,8 @@ if __name__ == "__main__":
         sys.path.insert(0, str(WEB.parent.parent))
         from streaming.run_control import RunManager
         server.run_manager = RunManager(WEB.parent.parent, args.demo)
+        if not args.demo:
+            server.run_manager.prepare()
     print(f"Spectator page: http://{args.bind}:{args.port}", flush=True)
     try:
         server.serve_forever()

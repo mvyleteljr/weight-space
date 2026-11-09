@@ -11,7 +11,7 @@ saved assignment for each game.
 
 ## Start new runs from the browser
 
-Run the server on the host that has your Astra and Fable CLI logins:
+Run the server on the host that has your Astra and Opus 5.5 CLI logins:
 
 ```sh
 docker compose -f streaming/compose.yml stop spectator

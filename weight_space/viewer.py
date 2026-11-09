@@ -58,10 +58,10 @@ def main():
     assets = Path(__file__).resolve().parent.parent / "Street_Fighter/assets"
     background = pygame.transform.smoothscale(pygame.image.load(str(assets / "images/bg1.jpg")), (1000, 600))
     fonts = {size: pygame.font.Font(None, size) for size in (22, 26, 32, 44)}
-    fighters = [Fighter(FighterState(1, 200, 310, False), [162, 4, [72, 46]],
-                        pygame.image.load(str(assets / "images/grimes-sprites.png")).convert_alpha(), ANIMATION_STEPS[0], None),
-                Fighter(FighterState(2, 700, 310, True), [250, 3, [112, 97]],
-                        pygame.image.load(str(assets / "images/shoggoth-sprites.png")).convert_alpha(), ANIMATION_STEPS[1], None)]
+    fighters = [Fighter(FighterState(1, 200, 310, False), [500, 648 / 500, [144 * 500 / 324, 92 * 500 / 324]],
+                        pygame.image.load(str(assets / "images/grimes-sprites-large.png")).convert_alpha(), ANIMATION_STEPS[0], None),
+                Fighter(FighterState(2, 700, 310, True), [500, 1.5, [224, 194]],
+                        pygame.image.load(str(assets / "images/shoggoth-sprites-large.png")).convert_alpha(), ANIMATION_STEPS[1], None)]
     selected_game, edit_after = args.game, 1
     phase, frame, playing, speed = game_directory(selected_game), 0.0, not args.paused, 1.0
     if args.edits:
@@ -142,7 +142,8 @@ def main():
             index = min(int(frame), len(rows))
             state = replay["manifest"]["initial_state"] if index == 0 else rows[index - 1]["state"]
             stage.blit(background, (0, 0))
-            for i, fighter in enumerate(fighters):
+            for i in (1, 0):
+                fighter = fighters[i]
                 fighter.state = FighterState(**state["fighters"][i])
                 fighter.draw(stage)
                 x = 24 if i == 0 else 666

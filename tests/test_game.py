@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from Street_Fighter.src.arena import Arena, ACTIONS, OBSERVATION_NAMES, encode_action, specification
+from Street_Fighter.src.arena import Arena, ACTIONS, OBSERVATION_NAMES, encode_action, specification, ATTACK_BALANCE
 from weight_space.game import DensePolicy, match
 from weight_space.network import initialize, save
 
@@ -66,13 +66,75 @@ class ArenaTests(unittest.TestCase):
             arena.step([attack, 0])
         self.assertLess(arena.fighters[1].health, 90)
 
-    def test_crossing_bodies_updates_facing(self):
+    def test_grounded_bodies_cannot_cross(self):
+        from Street_Fighter.src.arena import body_box
         arena = Arena()
-        arena.fighters[0].x, arena.fighters[1].x = 400, 410
-        arena.step([encode_action(move=1), encode_action(move=-1)])
-        self.assertEqual([f.x for f in arena.fighters], [410, 400])
-        self.assertTrue(arena.fighters[0].flip)
-        self.assertFalse(arena.fighters[1].flip)
+        for _ in range(60):
+            arena.step([encode_action(move=1), encode_action(move=-1)])
+            a, b = arena.fighters
+            self.assertLess(a.x, b.x)
+            self.assertLessEqual(body_box(a)[2], body_box(b)[0])
+
+    def test_grimes_can_jump_over_and_shoggoth_turn_is_delayed(self):
+        from Street_Fighter.src.arena import body_box, SHOGGOTH_TURN_DELAY
+        for reverse in (False, True):
+            arena = Arena()
+            a, b = arena.fighters
+            a.x, b.x = (650, 400) if reverse else (225, 400)
+            a.flip, b.flip = reverse, not reverse
+            move = -1 if reverse else 1
+            crossed = False
+            for tick in range(50):
+                old_side, old_flip = a.x < b.x, b.flip
+                arena.step([encode_action(move=move, jump=tick == 0), 0])
+                if old_side != (a.x < b.x):
+                    crossed = True
+                    self.assertEqual(b.flip, old_flip)
+                    self.assertEqual(b.turn_wait, SHOGGOTH_TURN_DELAY)
+            self.assertTrue(crossed)
+            self.assertFalse(a.jump)
+            self.assertEqual(b.flip, a.x < b.x)
+            self.assertTrue(body_box(a)[2] <= body_box(b)[0] or body_box(b)[2] <= body_box(a)[0])
+
+    def test_body_separation_at_walls_and_on_landing(self):
+        from Street_Fighter.src.arena import body_box
+        for x1, x2 in [(0, 80), (920, 840), (400, 400)]:
+            arena = Arena()
+            a, b = arena.fighters
+            a.x, b.x = x1, x2
+            a.y, a.vel_y, a.jump = arena.floor_y - 2, 8, True
+            arena.step([0, 0])
+            boxes = [body_box(a), body_box(b)]
+            self.assertTrue(boxes[0][2] <= boxes[1][0] or boxes[1][2] <= boxes[0][0])
+            for f in arena.fighters:
+                self.assertTrue(0 <= f.x <= arena.width - 80)
+
+    def test_shoggoth_waits_full_turn_delay_and_does_not_turn_mid_attack(self):
+        from Street_Fighter.src.arena import SHOGGOTH_TURN_DELAY
+        arena = Arena()
+        a, b = arena.fighters
+        a.x, b.x = 700, 400
+        arena.step([0, encode_action(attack=1)])
+        for _ in range(SHOGGOTH_TURN_DELAY):
+            arena.step([0, 0])
+            self.assertTrue(b.flip)
+        while b.attacking:
+            arena.step([0, 0])
+            self.assertTrue(b.flip)
+        arena.step([0, 0])
+        self.assertFalse(b.flip)
+
+    def test_punch_knocks_back_once_and_stays_inside_walls(self):
+        for grimes_x, shoggoth_x in [(400, 650), (650, 400), (0, 250)]:
+            arena, _ = self.shoggoth_attack(grimes_x, shoggoth_x)
+            a = arena.fighters[0]
+            self.assertEqual(a.health, 86)
+            self.assertGreaterEqual(a.x, 0)
+            self.assertLessEqual(a.x, arena.width - 80)
+            if grimes_x > shoggoth_x:
+                self.assertGreater(a.x, grimes_x)
+            elif grimes_x:
+                self.assertLess(a.x, grimes_x)
 
     def test_jump_avoids_hit_only_after_vertical_clearance(self):
         arena = Arena()
@@ -87,7 +149,7 @@ class ArenaTests(unittest.TestCase):
         self.assertLessEqual(arena.fighters[1].y + 180, arena.fighters[0].y)
         arena.step([encode_action(attack=1), encode_action(move=-1)])
         self.assertEqual(arena.fighters[1].health, 100)
-        self.assertEqual(arena.fighters[1].x, 490)
+        self.assertEqual(arena.fighters[1].x, 527)
 
     def test_grimes_can_hit_an_opponent_entering_during_swing(self):
         arena = Arena()
@@ -118,6 +180,7 @@ class ArenaTests(unittest.TestCase):
     def shoggoth_attack(self, grimes_x, shoggoth_x, steps=24):
         arena = Arena()
         arena.fighters[0].x, arena.fighters[1].x = grimes_x, shoggoth_x
+        arena.fighters[1].flip = grimes_x < shoggoth_x
         health = []
         for step in range(steps):
             arena.step([0, encode_action(attack=1) if step == 0 else 0])
@@ -129,15 +192,15 @@ class ArenaTests(unittest.TestCase):
             with self.subTest(grimes_x=grimes_x):
                 arena, health = self.shoggoth_attack(grimes_x, shoggoth_x)
                 self.assertEqual(health[:8], [100]*8)  # Windup cannot hit.
-                self.assertEqual(health[8], 90)  # First extended frame makes solid contact.
-                self.assertEqual(health[-1], 90)  # No repeated damage on active frames.
+                self.assertEqual(health[8], 86)  # First extended frame makes solid contact.
+                self.assertEqual(health[-1], 86)  # No repeated damage on active frames.
 
     def test_shoggoth_tip_requires_overlap_not_grazing(self):
         # Max extension ends at x=769; Grimes body begins at x+8.
         _, health = self.shoggoth_attack(750, 400)
         self.assertEqual(health[-1], 100)  # 11px overlap is only a graze.
         _, health = self.shoggoth_attack(749, 400)
-        self.assertEqual(health[-1], 90)  # 12px is a solid hit.
+        self.assertEqual(health[-1], 86)  # 12px is a solid hit.
         _, health = self.shoggoth_attack(780, 400)
         self.assertEqual(health[-1], 100)
 
@@ -155,6 +218,7 @@ class ArenaTests(unittest.TestCase):
                 with self.subTest(player=player, attack=attack, reversed=reversed_sides):
                     arena = Arena()
                     arena.fighters[0].x, arena.fighters[1].x = ((500, 400) if reversed_sides else (400, 500))
+                    arena.fighters[1].flip = not reversed_sides
                     actions = [0, 0]; actions[player-1] = encode_action(attack=attack)
                     arena.step(actions)
                     target = arena.fighters[2-player]
@@ -162,11 +226,11 @@ class ArenaTests(unittest.TestCase):
                         arena.step([0, 0])
                     self.assertEqual(target.health, 100)  # All windup frames.
                     arena.step([0, 0])
-                    self.assertEqual(target.health, 90)
+                    self.assertEqual(target.health, 100 - ATTACK_BALANCE[(player, attack)][0])
                     self.assertEqual(target.action, 5)  # Reaction on the same rendered frame.
                     self.assertEqual(arena.fighters[player-1].frame_index, 4)
                     for _ in range(14): arena.step([0, 0])
-                    self.assertEqual(target.health, 90)
+                    self.assertEqual(target.health, 100 - ATTACK_BALANCE[(player, attack)][0])
 
     def test_grimes_does_not_hit_empty_space_or_raised_tentacles(self):
         for attack in (1, 2):
@@ -178,7 +242,7 @@ class ArenaTests(unittest.TestCase):
 
     def test_grimes_blade_accepts_shallow_contact_but_not_a_graze(self):
         for attack, grazing_x in [(1, 701), (2, 625)]:
-            for overlap, expected in [(0, 100), (1, 90)]:
+            for overlap, expected in [(0, 100), (1, 100 - ATTACK_BALANCE[(1, attack)][0])]:
                 arena = Arena()
                 arena.fighters[0].x, arena.fighters[1].x = 400, grazing_x - overlap
                 arena.step([encode_action(attack=attack), 0])
@@ -191,11 +255,11 @@ class ArenaTests(unittest.TestCase):
             arena.fighters[0].x, arena.fighters[1].x = 400, target_x
             arena.step([encode_action(attack=attack), 0])
             for _ in range(23): arena.step([0, 0])
-            self.assertEqual(arena.fighters[1].health, 90)
+            self.assertEqual(arena.fighters[1].health, 100 - ATTACK_BALANCE[(1, attack)][0])
 
     def test_grimes_shallow_contact_also_works_facing_left(self):
         for attack, just_outside in [(1, 393), (2, 469)]:
-            for adjustment, expected in [(0, 100), (1, 90)]:
+            for adjustment, expected in [(0, 100), (1, 100 - ATTACK_BALANCE[(1, attack)][0])]:
                 arena = Arena()
                 arena.fighters[0].x, arena.fighters[1].x = 700, just_outside + adjustment
                 arena.step([encode_action(attack=attack), 0])
@@ -226,6 +290,53 @@ class ArenaTests(unittest.TestCase):
         self.assertFalse(shoggoth.attacking)
         for _ in range(24): arena.step([0, 0])
         self.assertEqual(grimes.health, 100)
+
+    def test_attack_balance_values_and_full_recovery_lock(self):
+        for (player, attack), (damage, recovery) in {
+                (1, 1): (10, 12), (1, 2): (12, 18), (2, 1): (14, 30), (2, 2): (18, 42)}.items():
+            with self.subTest(player=player, attack=attack):
+                self.assertEqual(ATTACK_BALANCE[(player, attack)], (damage, recovery))
+                arena = Arena()
+                fighter = arena.fighters[player - 1]
+                actions = [0, 0]; actions[player - 1] = encode_action(attack=attack)
+                arena.step(actions)
+                while fighter.attacking: arena.step([0, 0])
+                self.assertEqual(fighter.attack_cooldown, recovery)
+                start_x, start_y = fighter.x, fighter.y
+                actions[player - 1] = encode_action(move=1, jump=True, attack=attack)
+                for remaining in range(recovery - 1, -1, -1):
+                    arena.step(actions)
+                    self.assertEqual(fighter.attack_cooldown, remaining)
+                    self.assertEqual((fighter.x, fighter.y), (start_x, start_y))
+                    self.assertFalse(fighter.attacking or fighter.jump)
+                arena.step(actions)
+                self.assertEqual(fighter.x, start_x + (14 if player == 1 else 10))
+                self.assertTrue(fighter.jump and fighter.attacking)
+
+    def test_interruption_and_hit_reaction_do_not_erase_recovery(self):
+        arena = Arena()
+        grimes, shoggoth = arena.fighters
+        grimes.x, shoggoth.x = 400, 500
+        grimes.attacking, grimes.attack_type = True, 1
+        grimes.action, grimes.frame_index, grimes.animation_tick = 3, 3, 2
+        shoggoth.attacking, shoggoth.attack_type = True, 2
+        shoggoth.action, shoggoth.frame_index = 4, 2
+        arena.step([0, 0])
+        self.assertEqual(shoggoth.attack_cooldown, 42)
+        for _ in range(10): arena.step([0, encode_action(move=1, jump=True, attack=2)])
+        self.assertEqual(shoggoth.attack_cooldown, 32)
+        self.assertEqual(shoggoth.x, 537)
+        self.assertFalse(shoggoth.attacking or shoggoth.jump)
+
+    def test_recovery_keeps_gravity_active(self):
+        arena = Arena()
+        fighter = arena.fighters[1]
+        fighter.y -= 100
+        fighter.jump = True
+        fighter.attack_cooldown = 42
+        arena.step([0, encode_action(move=1, jump=True)])
+        self.assertEqual(fighter.y, arena.floor_y - 98)
+        self.assertEqual(fighter.x, 700)
 
     def test_knockout_and_time_limit(self):
         arena = Arena()

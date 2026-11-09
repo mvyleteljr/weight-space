@@ -48,6 +48,16 @@ class FrontendTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.replies(-1)
 
+    def test_context_requests_visible_even_without_a_finished_reply(self):
+        folder = self.root / 'edit-2/lab-1'; folder.mkdir(parents=True)
+        save(folder / 'revision-0.json', initialize([31, 8, 18]))
+        requests = [{'after_game': 2, 'request': '<script>Need collision events</script>',
+                     'reason': 'Understand blocked movement.', 'status': 'requested', 'id': 1}]
+        (folder / 'context-requests.json').write_text(json.dumps(requests))
+        history = self.store.policy_history()
+        self.assertEqual(history['agents'][0]['context_requests'], requests)
+        self.assertEqual(history['agents'][1]['context_requests'], [])
+
     def test_http_routes_are_read_only_and_do_not_serve_arbitrary_files(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), SpectatorHandler)
         server.replay_store, server.assets_root = self.store, self.root
@@ -57,6 +67,14 @@ class FrontendTests(unittest.TestCase):
         try:
             with urlopen(base + '/api/run') as response:
                 self.assertEqual(json.load(response)['demo']['games'][0]['number'], 2)
+            with urlopen(base + '/api/policy-history') as response:
+                self.assertEqual(len(json.load(response)['agents']), 2)
+            # Timed runs can exceed nine games.
+            match(self.root / 'model.json', self.root / 'model.json', self.root / 'game-10', 1)
+            self.status['games'].append({'number': 10, 'result': {}, 'player_agents': [1, 2]})
+            (self.root / 'demo.json').write_text(json.dumps(self.status))
+            with urlopen(base + '/api/games/10') as response:
+                self.assertEqual(json.load(response)['number'], 10)
             for path in ('/.env', '/api/games/../../.env', '/assets/../model.json', '/api/replies?after=999'):
                 with self.assertRaises(HTTPError) as error:
                     urlopen(base + path)

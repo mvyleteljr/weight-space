@@ -1,6 +1,8 @@
 """Provider calls for a bounded weight-writing test."""
 
 import json
+import uuid
+from contextlib import nullcontext
 import os
 import shutil
 import subprocess
@@ -37,7 +39,38 @@ def tinfoil_models():
                 for m in json.load(response)["data"]]
 
 
-def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=False, output_schema=None):
+class ProviderSession:
+    """One private CLI conversation for one agent in one run; never discovers old sessions."""
+    def __init__(self, provider, model):
+        if provider not in ("codex", "claude"):
+            raise ValueError("Persistent sessions require a subscription CLI.")
+        self.provider, self.model = provider, model
+        self.workspace = tempfile.TemporaryDirectory(prefix=f"weight-space-{provider}-")
+        self.session_id = None
+        self.context_text = None
+        self.round = None
+        self.history_sent = 0
+        self.requests = 0
+        self.interrupted = False
+
+    def close(self):
+        self.workspace.cleanup()
+
+
+def codex_session_id(stdout):
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="replace")
+    for line in (stdout or "").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") == "thread.started" and event.get("thread_id"):
+            return str(uuid.UUID(event["thread_id"]))
+    return None
+
+
+def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=False, output_schema=None, session=None, reasoning_effort=None):
     if not model or model.startswith("SET_"):
         raise ValueError("Set the exact model ID before a live test.")
     if provider == "tinfoil":
@@ -75,8 +108,13 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
     executable = {"codex": "codex", "claude": "claude"}.get(provider)
     if executable is None or shutil.which(executable) is None:
         raise ValueError(f"Provider CLI is unavailable: {provider}")
-    with tempfile.TemporaryDirectory(prefix="weight-space-") as temp:
+    if session is not None and (session.provider, session.model) != (provider, model):
+        raise ValueError("Session belongs to a different agent provider/model.")
+    workspace = nullcontext(session.workspace.name) if session else tempfile.TemporaryDirectory(prefix="weight-space-")
+    with workspace as temp:
         output = Path(temp) / "reply.txt"
+        output.unlink(missing_ok=True)
+        resumed = bool(session and session.session_id)
         if provider == "codex":
             command = ["codex", "exec", "--model", model, "--sandbox", "read-only",
                        "--disable", "shell_tool",
@@ -86,11 +124,27 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
             command = ["claude", "--print", "--model", model, "--output-format", "json",
                        "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                        "--safe-mode", "--no-session-persistence"]
-        if quick:
+        if session is not None:
             if provider == "codex":
-                command[2:2] = ["-c", 'model_reasoning_effort="low"']
+                command.remove("--ephemeral")
+                command.insert(2, "--json")
+                if resumed:
+                    # Parent exec options preserve read-only/no-shell settings on resume.
+                    command[-1:] = ["resume", session.session_id, "-"]
             else:
-                command.extend(["--effort", "low"])
+                command.remove("--no-session-persistence")
+                if resumed:
+                    command.extend(["--resume", session.session_id])
+                else:
+                    session.session_id = str(uuid.uuid4())
+                    command.extend(["--session-id", session.session_id])
+            session.requests += 1
+        if quick or reasoning_effort is not None:
+            effort = reasoning_effort or "low"
+            if provider == "codex":
+                command[2:2] = ["-c", f'model_reasoning_effort="{effort}"']
+            else:
+                command.extend(["--effort", effort])
         if output_schema is not None:
             if provider == "codex":
                 schema_path = Path(temp) / "reply-schema.json"
@@ -105,13 +159,32 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
         try:
             result = subprocess.run(command, input=prompt, text=True, capture_output=True,
                                     timeout=timeout, cwd=temp, env=environment)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
+            if session is not None:
+                if provider == "codex":
+                    session.session_id = codex_session_id(error.stdout) or session.session_id
+                session.interrupted = True
             # The command includes the full schema. Keep it out of user-facing errors.
             raise TimeoutError(f"{provider} did not reply within {timeout:.0f} seconds.") from None
         if result.returncode:
+            detail = result.stderr[-1500:]
+            if not detail.strip() and provider == "claude":
+                try:
+                    failure = json.loads(result.stdout)
+                    detail = str(failure.get("result") or failure.get("error") or failure.get("errors") or "No error details returned.")[:1500]
+                except ValueError:
+                    detail = "No structured error details returned."
             raise RuntimeError(f"{provider} exited with status {result.returncode}: "
-                               + result.stderr[-1500:])
-        metadata = {"provider": provider, "requested_model": model}
+                               + detail)
+        metadata = {"provider": provider, "requested_model": model, "resumed": resumed}
+        if session is not None and provider == "codex":
+            returned_id = codex_session_id(result.stdout)
+            if not returned_id:
+                raise RuntimeError("Codex returned no session ID; refusing a context-free continuation.")
+            if resumed and returned_id != session.session_id:
+                raise RuntimeError("Codex resumed a different session.")
+            session.session_id = returned_id
+            metadata["session_id"] = returned_id
         if provider == "codex":
             if not output.exists():
                 raise RuntimeError("Codex did not write a final reply.")
@@ -119,6 +192,8 @@ def complete(provider, model, prompt, timeout=180, max_tokens=20000, *, quick=Fa
         body = json.loads(result.stdout)
         if body.get("is_error"):
             raise RuntimeError("Claude returned an error result. Check subscription access.")
+        if session is not None and body.get("session_id") != session.session_id:
+            raise RuntimeError("Claude returned a different session ID.")
         metadata.update({"usage": body.get("usage"), "model_usage": body.get("modelUsage"),
                          "session_id": body.get("session_id")})
         if output_schema is not None:

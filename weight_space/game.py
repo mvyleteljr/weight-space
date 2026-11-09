@@ -10,7 +10,7 @@ from .network import encode, fingerprint, forward, load, save, validate
 
 def validate_policy(model):
     validate(model)
-    if model["input_size"] != len(OBSERVATION_NAMES) or len(model["layers"][-1]["bias"]) != len(ACTIONS):
+    if model["input_size"] != len(OBSERVATION_NAMES) + int(model.get("action_feedback", False)) or len(model["layers"][-1]["bias"]) != len(ACTIONS):
         raise ValueError(f"Street Fighter needs {len(OBSERVATION_NAMES)} inputs and {len(ACTIONS)} outputs.")
 
 
@@ -19,12 +19,13 @@ class DensePolicy:
         validate_policy(model)
         self._model = copy.deepcopy(model)
         self.sha256 = fingerprint(self._model)
+        self.reset()
 
     def reset(self):
-        pass  # Dense networks have no recurrent state.
+        self.memory = None
 
     def act(self, observation):
-        scores = forward(self._model, observation)
+        scores, self.memory = forward(self._model, observation, memory=self.memory, return_memory=True)
         return max(range(len(scores)), key=scores.__getitem__)
 
 

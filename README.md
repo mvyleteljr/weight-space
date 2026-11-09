@@ -123,12 +123,12 @@ a run with `uv run python streaming/server.py --demo runs/YOUR_RUN --port 8081`,
 then open http://127.0.0.1:8081. No desktop viewer is required. See
 [browser playback](streaming/README.md) for Docker setup and the optional HLS mode.
 Add `--allow-new-runs` to enable the **New run** button on the local host.
-Choose 2 to 9 games. Each run starts Astra and Fable from identical fresh random
+Choose 2 to 9 games. Each run starts Astra and Opus 5.5 from identical fresh random
 weights, switches characters each game, and lets both agents edit after each game
 except the final game. The tally counts agent wins and shows draws separately.
 **Restart** only restarts playback of the selected game.
 
-The input-test loop lets Astra and Fable inspect recorded actions, read layer
+The input-test loop lets Astra and Opus 5.5 inspect recorded actions, read layer
 activations, edit explicit weight values, and test chosen inputs before submission.
 Both start with the same random 31–8–18 network. Each agent has its own candidate.
 Tests run a network forward pass. They do not use an opponent or advance the game.
@@ -190,7 +190,7 @@ These settings follow the [Tinfoil reasoning guide](https://docs.tinfoil.sh/guid
 The host sends a compact JSON tool list through each subscription CLI. It accepts
 only the listed data operations. Native shell and code tools remain disabled.
 Codex receives `--output-schema`; Claude receives `--json-schema`. The schema
-allows only the seven data tools and their argument fields. Claude replies are
+allows only the trusted data tools and their argument fields. Claude replies are
 read from `structured_output`. Host validation still checks types, bounds, and
 state before applying edits. A valid JSON shape does not prove a good strategy.
 The agents can read a sequence of saved steps, inspect a step's input, activations,
@@ -198,9 +198,10 @@ scores and action, read a neuron, set numeric weights, test up to eight inputs p
 call, and submit. Tests can include an expected action. A mismatch is feedback;
 it does not prevent submission. Each final revision must have an input test.
 
-The prompt asks for short replies and three to five exchanges. Both CLIs use low
-reasoning effort for this loop. Each reply has a 60-second limit. Each agent has
-a four-minute limit, ten replies, 40 tool calls, 12 edits, and 64 input test cases.
+The game requests one reply per update, with up to eight ordered edit/test/submit calls.
+Current weights and sampled match evidence are included upfront; no retries or
+follow-up calls are made within that update. Astra uses medium reasoning effort; Opus 5.5 uses high. Each reply has a 120-second limit. Each agent has
+a four-minute round budget, one reply, up to eight tool calls, and eight cases per test call.
 These limits bound the loop; they do not guarantee fast service responses.
 Invalid tool calls return errors without applying partial weight edits.
 
@@ -295,7 +296,7 @@ activation samples for both original networks. Full state traces remain in the m
 Raw replies and provider metadata are saved. Invalid submissions stop the demo;
 there is no automatic retry, model fallback, or host execution of returned code.
 
-Astra–Fable uses the CLI subscriptions. To use Tinfoil for Kimi, set
+Astra–Opus 5.5 uses the CLI subscriptions. To use Tinfoil for Kimi, set
 `--pairing astra-kimi` and load the key with `uv run --env-file .env`.
 These provider calls do not stream progress. An outstanding request does not
 prove that the model is still thinking. A timeout is recorded as a failure.
@@ -318,3 +319,155 @@ notices.
 - [Claude Code CLI](https://code.claude.com/docs/en/cli-reference)
 - [Tinfoil Python SDK](https://docs.tinfoil.sh/sdk/python-sdk)
 - [Tinfoil model list](https://inference.tinfoil.sh/v1/models)
+
+### Timed autonomous training
+
+The CLI and browser New run launcher default to 10 minutes of repeated matches
+and private weight editing. Each agent carries its submitted weights forward.
+The wall-clock budget includes matches and editing; pending model calls are
+limited by the remaining budget. A final match records the last accepted weights
+at the deadline, so shutdown can take a little longer than the budget.
+
+```sh
+.venv/bin/python -m weight_space.tool_loop --output runs/timed-training --duration-seconds 600 --swap-sides
+```
+
+Add `--resume-from runs/previous-run` to continue the same agents' last played
+weights in a new run. Explicit `--games 6` selects the older fixed-game mode
+unless `--duration-seconds` is also supplied. Combat tuning is not disclosed to
+agents; they infer attack behavior from recorded gameplay.
+
+### Agent-designed policies and history
+
+The tool-loop agents can now change their architecture and weights each editing
+round. Each agent has **one policy for both characters**, with 31 inputs and 18
+action scores. Architectures support 1–8 dense or simple recurrent layers,
+1–64 neurons per layer, linear/ReLU/tanh activations, and at most 20,000
+parameters. These are data-only networks, not agent-supplied executable code.
+
+`set_architecture` replaces the candidate with zero weights; `edit_weights`
+sets ordinary weights/biases and `edit_recurrent` sets state-to-state weights.
+Recurrent layers compute `activation(W x + R h_previous + bias)`. Each policy has
+private memory that resets at the beginning of every match, including character
+swaps. `test_sequence` checks consecutive ticks; a recurrent submission must
+pass through a test sequence of at least two ticks for its latest revision.
+`inspect_step` reconstructs recurrent state from the recorded game prefix.
+Only submitted candidates become the next game's policy; timeouts retain the
+previous policy. Damage/recovery tuning remains hidden from agent instructions.
+
+The spectator page shows compact win totals and gameplay at the top, with
+two policy panels below the game. Replays load paused. SVG diagrams show layers, widths, activations, and recurrent loops;
+parameter counts and a policy fingerprint identify weight-only revisions too.
+Each panel has its own previous/next arrows and **Live** toggle. Updates pair
+public reply notes and tool outcomes with the policy revision at that point,
+and distinguish candidates from submitted or discarded policies. Full matrices
+remain in each run's `lab-*/revision-*.json` artifacts.
+
+### Update context and agent requests
+
+Each editing prompt explains indexed inputs and normalization, animation IDs,
+character identity versus player slots, pre-action observations versus post-action
+results, recurrent resets, and the distinction between forward-pass tests and
+actual matches. The summary includes agent-relative outcomes, action counts, and
+up to 12 observed health-change events with `read_steps` indices. Damage/recovery
+configuration stays hidden; gameplay evidence remains accessible.
+
+Agents use `request_context` (requested change + evidence/reason) as their final
+call when they need an environment or context change. It stops training before
+another match and blocks new training while approval is pending. An in-flight
+opponent reply can finish, but no further tools are run after the pause is seen.
+Requests persist in `lab-*/context-requests.json` and the run's
+`approval-request.json`, and appear in the **Context requests** panels.
+The supervising assistant reviews these requests with the user and must obtain
+explicit approval before changing the environment. No change is applied automatically.
+The saved request does not itself send a chat notification; the assistant must
+monitor the run or inspect it on the next interaction.
+
+Network diagrams show every neuron as a small dot. Hover, tap, or focus a neuron
+to reveal its incoming and outgoing weights. Lines are grayscale: brightness
+scales with absolute weight divided by the largest absolute weight in the whole
+destination layer. Hover a line for its exact signed value; zero weights are dark.
+Purple loops denote recurrent state; they are schematic, not individual recurrent weights.
+These diagrams show weights, not live activations. Wide networks scroll horizontally; history still browses independently.
+
+Previous-action feedback is optional: agents call `set_action_feedback` with
+`enabled: true` to add input 31. Its value is the previous selected action ID / 17,
+or -1 at the start of each game. It records the command selected even when combat
+rules prevent it from executing. Existing weights are preserved; the new column
+starts at zero. Agents can edit that column or disable feedback. This works with
+MLPs and recurrent layers. `test_sequence` carries predicted actions between ticks;
+independent `test_inputs` cases reset feedback. Both accept the usual 31 environment
+values. Stateful policies must pass a sequence test before submission.
+
+The web controller has **Play/Pause**, **Speed**, and **Reset**. Launching the
+server or pressing Reset starts a fresh session: identical zeroed 31–8–18 policies,
+zero scores, no old games or agent context. Both agents receive their initial
+context and can initialize weights or redesign their network. **Initializing…**
+is disabled until both agents submit their first policies. **Play** then begins
+the 10-minute training session. Initialization failure keeps Start disabled; Reset
+retries with a fresh session.
+
+Every game appears automatically, in order. Speed changes how fast the game is
+shown. The Play button becomes Pause while running; click it again to resume. An agent update already underway can finish, but the next game waits for resume. There are no replay, seeking, or game-selection controls. The trainer
+waits for the browser to finish each game before updating the agents, so it cannot
+skip ahead of the viewer. Closing the page leaves the trainer waiting at that game;
+reopening it continues the current game. Reset stops the trainer and its agent
+processes, clears the screen and scores, and initializes a new session.
+
+Reset clears architecture, weights, recurrent state, action feedback, and agent
+context. Each agent gets a fresh private CLI session and temporary working directory.
+Old logs stay archived but are never supplied to the new agents. CLI runs remain
+randomly initialized unless `--zero-initial` is supplied. `--wait-for-start` and
+`--wait-for-viewer` enable the web controller's initialization and game-display gates.
+
+Fresh runs launched from the UI/CLI give both agents an initialization phase before
+game 1. They receive no recordings or prior results and can edit weights, change
+architecture, enable memory, or keep the initial policy after testing it. This
+phase uses the same bounded tools and request/approval gate as later updates.
+Setup consumes the run's wall-clock budget. A timeout keeps the initial policy;
+a failed update or environment-change request prevents gameplay from starting.
+Initialization logs are stored in `edit-0/lab-1` and `edit-0/lab-2`.
+
+### Editing agent context
+
+Edit [`docs/agent-context.md`](docs/agent-context.md) to change the goal,
+initialization guidance, and operating instructions shared by Astra and Opus 5.5.
+The tool loop reads this file for every request, including before game 1; edits
+apply to subsequent requests without rebuilding. Keep the `{{...}}` placeholders:
+they insert the current phase, reply number, tool definitions, compact run summary,
+and tool history. Agents inspect weight values through `read_weights`; the default
+prompt does not include full weight arrays. Normal Markdown and braces are safe to edit.
+Each lab saves the exact rendered prompt as `turn-N.prompt.txt`. Tool permissions
+and network limits are enforced separately in Python; prose changes do not lift them.
+
+### Persistent agent conversations
+
+Astra and Opus 5.5 each receive the full Markdown context once per run. Later replies
+send only new tool results and changing budgets/policy metadata. Between games,
+the update contains the new match summary and authoritative current-policy identity;
+it explicitly discards any unsubmitted candidate from the previous round. The
+agents can inspect current weights through tools instead of receiving repeated
+weight arrays. If the Markdown changes, the revised instructions are sent once
+on the next request. The structured-output schema remains enforced on every call.
+
+Calls resume exact provider session IDs, never `--last` or `--continue`. Sessions
+are separate for each agent, and a reset starts new ones. The existing read-only,
+no-shell/no-native-tools restrictions remain in effect. Other provider integrations
+without CLI session support retain the stateless behavior.
+
+`turn-N.prompt.txt` logs the initial/update payload; `turn-N.attempt-M.prompt.txt`
+logs exactly what was sent, including retry notices. Provider JSON and `session.json`
+record session identity, resume status, and request counts. A timed-out response's
+proposed tools are never executed; retries explicitly state that no tools from
+that interrupted response were applied. Missing or mismatched session IDs fail
+rather than silently starting a context-free conversation.
+
+The provider CLI manages its conversation context window/compaction. Resuming
+reduces the repeated text sent by this application, but does not guarantee reduced
+provider billing or unlimited context retention.
+
+The web launcher randomly assigns Grimes and Shoggoth before every game (including
+game 1). Each assignment is an independent draw, so repeats are possible. Agent
+context, character labels, and scores follow the recorded assignment. The run seed
+reproduces assignments. CLI: `--random-sides`; do not combine with `--swap-sides`
+or `--paired-games`.

@@ -1,22 +1,19 @@
 const $ = id => document.getElementById(id);
-const requested = new URLSearchParams(location.search).get('match') || 'match-1';
-const match = /^match-[a-zA-Z0-9_-]+$/.test(requested) ? requested : 'match-1';
 const canvas = $('arena'), ctx = canvas.getContext('2d');
-let demo = null, replay = null, selected = 1, frame = 0, playing = false, speed = 1;
-let requestId = 0, lastTime = 0, endWait = 0, fallback = false, assets = null, replyKey = '', polling = false;
-const cache = new Map();
-let activeRun = null, runToken = null, launching = false, generation = 0;
+let idleState = null, demo = null, replay = null, selected = 1, frame = 0, playing = false, speed = 1;
+let requestId = 0, lastTime = 0, endWait = 0, assets = null, replyKey = '', polling = false;
+let policyData = null;
+const historySelection = [null, null];
+let activeRun = null, runToken = null, launching = false, canStart = false, generation = 0;
+let acknowledged = 0, acknowledging = false, ackRetryAt = 0;
 function resetRun(name) {
-  activeRun = name; ++requestId; cache.clear(); replay = null; selected = 1;
+  activeRun = name; ++requestId; replay = null; selected = 1;
   frame = 0; endWait = 0; playing = false; replyKey = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  $('replies').replaceChildren(); $('game').replaceChildren();
-  const latest = element('option', 'Latest · follow live'); latest.value = 'latest';
-  $('edit-round').replaceChildren(latest);
-  $('left-name').textContent = 'Astra'; $('right-name').textContent = 'Fable';
-  $('outcome').textContent = 'VS'; $('match-label').textContent = 'NEW RUN';
-  $('time').textContent = '0:00 / 0:00'; $('seek').value = 0;
-  $('playback-status').textContent = 'Waiting for game 1…';
+  $('replies').replaceChildren();
+  historySelection.fill(null); policyData = null;
+  acknowledged = 0; acknowledging = false; ackRetryAt = 0;
+
 }
 function updateTally() {
   const tally = demo.tally || {wins:[0, 0], draws:0, games:demo.games.length};
@@ -25,10 +22,10 @@ function updateTally() {
     else tally.wins[(game.player_agents || [1, 2])[game.result.winner - 1] - 1]++;
   }
   [0, 1].forEach(i => {
-    $(`score-name-${i + 1}`).textContent = demo.agents[i]?.name || ['Astra', 'Fable'][i];
+    $(`score-name-${i + 1}`).textContent = demo.agents[i]?.name || ['Astra', 'Opus 5.5'][i];
     $(`score-${i + 1}`).textContent = tally.wins[i];
   });
-  $('tally-note').textContent = `Run tally · ${tally.games} games complete · ${tally.draws} draws`;
+  $('tally-note').textContent = `${tally.games} game${tally.games === 1 ? '' : 's'} · ${tally.draws} draw${tally.draws === 1 ? '' : 's'}`;
 }
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -41,42 +38,58 @@ async function get(url) {
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
   return response.json();
 }
-function clock(frames) {
-  const seconds = Math.floor(frames / (replay?.fps || 60));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
 function names() {
-  return (replay?.player_agents || [1, 2]).map(id => demo?.agents[id - 1]?.name || `Player ${id}`);
+  return (replay?.player_agents || demo?.next_player_agents || [1, 2]).map(id => demo?.agents[id - 1]?.name || `Player ${id}`);
 }
 function syncControls() {
-  $('play').textContent = playing ? 'Pause' : 'Play';
-  $('play').disabled = $('restart').disabled = $('seek').disabled = !replay;
-  $('next').disabled = !demo?.games.some(game => game.number === selected + 1);
-  if (replay) {
-    $('seek').max = replay.frames.length; $('seek').value = Math.min(replay.frames.length, Math.floor(frame));
-    $('time').textContent = `${clock(frame)} / ${clock(replay.frames.length)}`;
-  }
+  const phase = demo?.phase;
+  const initializing = !phase || ['initializing', 'preparing_agents'].includes(phase);
+  const active = ['playing','editing','rematch'].includes(phase);
+  $('start').textContent = initializing ? 'Initializing…' : active && !demo?.paused ? 'Pause' : 'Play';
+  $('start').disabled = launching || (!active && !(phase === 'ready' && canStart));
+  $('reset').disabled = launching || !runToken;
+}
+async function post(path, body = {}) {
+  const response = await fetch(path, {method:'POST',
+    headers:{'Content-Type':'application/json', 'X-Run-Token':runToken},
+    body:JSON.stringify(body), signal:AbortSignal.timeout(15000)});
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  return response.json();
+}
+async function finishGame() {
+  if (acknowledging || acknowledged >= selected || Date.now() < ackRetryAt) return;
+  const version = generation, run = activeRun, number = selected;
+  acknowledging = true;
+  try {
+    await post('/api/game-finished', {run, game:number});
+    if (version === generation) acknowledged = number;
+  } catch (error) {
+    if (version === generation) {
+      ackRetryAt = Date.now() + 2000;
+      $('status').textContent = 'Connection interrupted · retrying';
+    }
+  } finally { if (version === generation) acknowledging = false; }
 }
 async function selectGame(number, autoplay = false) {
   const token = ++requestId;
-  playing = false; syncControls(); $('playback-status').textContent = `Loading game ${number}…`;
+  playing = false; syncControls(); $('status').textContent = `Loading game ${number}…`;
   try {
-    const data = cache.get(number) || await get(`/api/games/${number}`);
+    const data = await get(`/api/games/${number}`);
     if (token !== requestId) return;
-    cache.set(number, data); replay = data; selected = number; frame = 0; endWait = 0; playing = autoplay;
-    $('game').value = String(number);
-    $('left-name').textContent = names()[0]; $('right-name').textContent = names()[1];
-    $('match-label').textContent = `GAME ${number}${demo.swap_sides ? ` · ${number % 2 ? 'FIRST ASSIGNMENT' : 'SWAPPED CHARACTERS'}` : ''}`;
+    replay = data; selected = number; frame = 0; endWait = 0; playing = autoplay;
     syncControls(); draw();
-  } catch (error) { if (token === requestId) $('playback-status').textContent = error.message; }
+  } catch (error) { if (token === requestId) { playing = autoplay; endWait = 0; syncControls(); $('status').textContent = error.message; } }
 }
 function draw() {
-  if (!assets || !replay) return;
-  const index = Math.min(replay.frames.length, Math.floor(frame));
-  const state = index ? replay.frames[index - 1] : replay.initial_state;
+  if (!assets || (!replay && !idleState)) return;
+  const index = replay ? Math.min(replay.frames.length, Math.floor(frame)) : 0;
+  const state = index ? replay.frames[index - 1] : (replay?.initial_state || idleState);
   ctx.drawImage(assets[0], 0, 0, 1000, 600);
-  state.fighters.forEach((fighter, i) => {
-    const size = i ? 250 : 162, scale = i ? 3 : 4, offset = i ? [112, 97] : [72, 46];
+  [1, 0].forEach(i => {
+    const fighter = state.fighters[i];
+    // Keep Grimes at her existing world size with the new 500px source frames.
+    const size = 500, scale = i ? 1.5 : 648 / 500;
+    const offset = i ? [224, 194] : [144 * 500 / 324, 92 * 500 / 324];
     const width = size * scale, x = fighter.x - offset[0] * scale, y = fighter.y - offset[1] * scale;
     ctx.save(); ctx.translate(x + (fighter.flip ? width : 0), y); ctx.scale(fighter.flip ? -1 : 1, 1);
     ctx.drawImage(assets[i + 1], fighter.frame_index * size, fighter.action * size, size, size, 0, 0, width, width);
@@ -84,64 +97,155 @@ function draw() {
     const left = i ? 666 : 24;
     ctx.fillStyle = '#23232d'; ctx.fillRect(left, 52, 310, 20);
     ctx.fillStyle = i ? '#d773e6' : '#46bee6'; ctx.fillRect(left, 52, 310 * fighter.health / 100, 20);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 24px Arial'; ctx.fillText(names()[i].toUpperCase(), left, 38);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 24px Arial'; ctx.fillText(`${i === 0 ? 'Grimes' : 'Shoggoth'} (${names()[i]})`, left, 38, 310);
     ctx.font = '18px Arial'; ctx.fillText(`HP ${fighter.health}`, left, 98);
   });
   ctx.fillStyle = '#fff'; ctx.font = 'bold 28px Arial';
-  ctx.fillText(`${Math.max(0, (state.max_steps - state.step) / replay.fps).toFixed(1)}s`, 455, 45);
-  const outcome = state.done ? (state.winner ? `${names()[state.winner - 1]} wins` : 'Draw') : 'VS';
-  $('outcome').textContent = outcome;
-  $('playback-status').textContent = state.done ? `${outcome} · ${state.reason.replaceAll('_', ' ')}` :
-    `Game ${selected} · ${playing ? 'Playing' : 'Paused'} · ${speed}×`;
+  ctx.fillText(`${Math.max(0, (state.max_steps - state.step) / (replay?.fps || 60)).toFixed(1)}s`, 455, 45);
+  if (state.done) {
+    ctx.textAlign = 'center';
+    ctx.fillText(state.winner ? `${names()[state.winner - 1]} wins` : 'Draw', 500, 145);
+    ctx.textAlign = 'left';
+  }
 }
 function animate(now) {
   const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.1) : 0; lastTime = now;
-  if (replay && playing) {
+  if (replay && playing && !demo?.paused) {
     frame = Math.min(replay.frames.length, frame + dt * replay.fps * speed);
     if (frame >= replay.frames.length) {
       endWait += dt;
-      if (!$('auto').checked || selected >= (demo?.games_requested || 1)) playing = false;
-      else if (endWait >= 2 && demo.games.some(game => game.number === selected + 1)) selectGame(selected + 1, true);
-      else if (endWait >= 2) $('status').textContent = 'Waiting for the next game';
+      if (endWait >= 0.5 && demo?.phase === 'playing' && demo.viewing_game === selected) finishGame();
+      if (demo?.games.some(game => game.number === selected + 1)) selectGame(selected + 1, true);
     }
-    syncControls(); draw();
+    draw();
   }
   requestAnimationFrame(animate);
 }
-function renderReplies(data) {
-  const key = JSON.stringify(data); if (key === replyKey) return; replyKey = key;
-  const positions = [...$('replies').querySelectorAll('.reply-log')].map(log =>
-    ({top: log.scrollTop, bottom: log.scrollHeight - log.scrollTop - log.clientHeight < 40}));
-  const cards = data.agents.map(({agent, replies}) => {
-    const card = element('article', undefined, 'reply-card'), top = element('div', undefined, 'reply-card-top');
-    top.append(element('h3', agent.name), element('span', agent.status.replaceAll('_', ' '), 'badge'));
-    card.append(top, element('p', `After game ${data.after_game} · Revision ${agent.revision || 0} · ${agent.test_cases || 0} input tests`, 'reply-meta'));
-    const log = element('div', undefined, 'reply-log'); log.tabIndex = 0; log.setAttribute('aria-label', `${agent.name} replies`);
-    if (!replies.length) log.append(element('p', 'Waiting for the first reply…'));
-    for (const reply of replies) {
-      const block = element('div', undefined, 'reply'); block.append(element('span', `REPLY ${reply.turn}`, 'tag'), element('p', reply.note));
-      for (const call of reply.calls) {
-        let detail = call.tool.replaceAll('_', ' ');
-        if (call.error) detail += ` · Error: ${call.error}`;
-        else if (call.tests) {
-          const checked = call.tests.filter(test => test.matches_expected !== null);
-          detail += ` · ${call.tests.length} inputs · ${checked.filter(test => test.matches_expected).length}/${checked.length} expected actions matched`;
-        } else if (call.tool === 'edit_weights') detail += ` · ${call.updates} values set`;
-        if (!call.done) detail += ' · requested';
-        block.append(element('p', detail, call.error ? 'tool error' : 'tool'));
-        if (call.reason) block.append(element('p', call.reason, 'tool-reason'));
+
+function architectureDiagram(architecture) {
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  const layers = [{width:architecture.inputs, type:'input'}, ...architecture.layers];
+  const width = Math.max(280, layers.length * 95);
+  const span = Math.max(...layers.map(l => l.width)) * 10;
+  const height = span + 110;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.style.minWidth = `${width}px`;
+  svg.setAttribute('role', 'group');
+  svg.setAttribute('aria-label', 'Policy network: ' + layers.map(l => `${l.width} ${l.type} ${l.activation || ''}`).join(' → '));
+  const add = (tag, attrs, text, parent=svg) => {
+    const node = document.createElementNS(ns, tag);
+    Object.entries(attrs).forEach(([k,v]) => node.setAttribute(k, String(v)));
+    if (text !== undefined) node.textContent = text;
+    parent.append(node); return node;
+  };
+  const xs = layers.map((_,i) => 45 + i * (width-90)/(layers.length-1));
+  const y = (layer,id) => 55 + (span - (layers[layer].width-1)*10)/2 + id*10;
+  // Layer links give an uncluttered overview. Inspect one neuron for actual weights.
+  for (let i=1; i<layers.length; i++) {
+    add('path',{d:`M ${xs[i-1]+10} ${55+span/2} H ${xs[i]-10}`,stroke:'#384653','stroke-width':1,fill:'none'});
+  }
+  const edges = add('g', {});
+  // Normalize against the entire destination layer, not just the selected neuron.
+  const layerMaxima = architecture.layers.map(layer =>
+    Math.max(0, ...(layer.connections || []).map(edge => Math.abs(edge.weight))));
+  const inspect = (li,id) => {
+    edges.replaceChildren();
+    architecture.layers.forEach((layer,k) => {
+      const to = k+1;
+      for (const edge of layer.connections || []) {
+        if (!((li === to && edge.to === id) || (li === k && edge.from === id))) continue;
+        const brightness = Math.round(55 + 200 * (layerMaxima[k] ? Math.abs(edge.weight) / layerMaxima[k] : 0));
+        const d = `M ${xs[k]+4} ${y(k,edge.from)} L ${xs[to]-4} ${y(to,edge.to)}`;
+        const label = `L${k} W[${edge.to}][${edge.from}] = ${edge.weight}`;
+        const group = add('g', {}, undefined, edges);
+        add('path',{d,stroke:`rgb(${brightness}, ${brightness}, ${brightness})`,
+          'stroke-width':1.2,fill:'none','pointer-events':'none'}, undefined, group);
+        const hit = add('path',{d,stroke:'transparent','stroke-width':6,fill:'none',
+          'pointer-events':'stroke','aria-label':label,class:'network-weight-hit'}, undefined, group);
+        add('title',{},label,hit);
       }
-      log.append(block);
+    });
+  };
+  layers.forEach((layer,i) => {
+    const x=xs[i], output=i===layers.length-1;
+    add('text',{x,y:19,'text-anchor':'middle',class:'network-label'},i===0 ? 'INPUT' : output ? 'OUTPUT' : `L${i-1} · ${layer.type.toUpperCase()}`);
+    add('text',{x,y:38,'text-anchor':'middle',class:'network-count'},String(layer.width));
+    for (let id=0; id<layer.width; id++) {
+      const circle=add('circle',{cx:x,cy:y(i,id),r:3,fill:layer.type==='recurrent' ? '#cb98eb' : '#8ac7ee',
+        tabindex:0,role:'button','aria-label':i===0 ? (architecture.action_feedback && id===31 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id}`,class:'network-neuron'});
+      add('title',{},i===0 ? (architecture.action_feedback && id===31 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id} · bias ${layer.biases?.[id] ?? 'unavailable'}`,circle);
+      circle.addEventListener('mouseenter',()=>inspect(i,id));
+      circle.addEventListener('focus',()=>inspect(i,id));
+      circle.addEventListener('click',()=>inspect(i,id));
     }
-    if (agent.error) log.append(element('p', agent.error, 'error'));
-    if (agent.note) log.append(element('p', agent.note));
-    card.append(log); return card;
+    if (layer.type==='recurrent') {
+      add('path',{d:`M ${x+8} ${55+span} C ${x+34} ${55+span} ${x+34} 55 ${x+8} 55 l 4 -3 m -4 3 l 4 3`,fill:'none',stroke:'#cb98eb','stroke-width':1});
+    }
+    add('text',{x,y:height-25,'text-anchor':'middle',class:'network-label'},layer.activation || 'features');
+    add('text',{x,y:height-9,'text-anchor':'middle',class:'network-index'},i ? `${layer.parameters.toLocaleString()} params` : 'per tick');
+  });
+  svg.addEventListener('mouseleave',()=>edges.replaceChildren());
+  return svg;
+}
+function renderPolicies(data) {
+  policyData = data;
+  const key = JSON.stringify([data, historySelection]); if (key === replyKey) { document.querySelectorAll('.reply-card-top .badge').forEach((badge,i) => { badge.textContent = agentProgress(data.agents[i].agent, demo?.phase); }); return; } replyKey = key;
+  const cards = data.agents.map(({agent, snapshots, context_requests = []}, agentIndex) => {
+    const card = element('article', undefined, 'reply-card');
+    const top = element('div', undefined, 'reply-card-top');
+    top.append(element('h3', agent.name), element('span', agentProgress(agent, demo?.phase), 'badge'));
+    card.append(top);
+    if (!snapshots.length) { card.append(element('p', 'Waiting for the first policy…')); return card; }
+    let index = historySelection[agentIndex] === null ? snapshots.length - 1 : snapshots.findIndex(s => s.id === historySelection[agentIndex]);
+    if (index < 0) index = snapshots.length - 1;
+    const snapshot = snapshots[index], arch = snapshot.architecture;
+    const nav = element('div', undefined, 'policy-nav');
+    const previous = element('button', '←'), next = element('button', '→'), live = element('button', 'Live');
+    previous.setAttribute('aria-label', `${agent.name}: previous policy update`);
+    next.setAttribute('aria-label', `${agent.name}: next policy update`);
+    live.setAttribute('aria-label', `${agent.name}: follow live updates`);
+    previous.disabled = index === 0; next.disabled = index === snapshots.length - 1;
+    live.setAttribute('aria-pressed', String(historySelection[agentIndex] === null));
+    previous.onclick = () => {historySelection[agentIndex] = snapshots[index-1].id; renderPolicies(policyData);};
+    next.onclick = () => {historySelection[agentIndex] = snapshots[index+1].id; renderPolicies(policyData);};
+    live.onclick = () => {historySelection[agentIndex] = null; renderPolicies(policyData);};
+    nav.append(previous, next, live);
+    card.append(nav, element('p', `${snapshot.after_game === 0 ? 'Before game 1' : `After game ${snapshot.after_game}`} · ${snapshot.stage}`, 'reply-meta'));
+    const diagram = element('div', undefined, 'policy-diagram'); diagram.append(architectureDiagram(arch)); card.append(diagram);
+    card.append(element('p', 'Select neuron · brighter = larger |weight| within layer · hover line for signed value', 'network-legend'));
+    card.append(element('p', `${arch.parameters.toLocaleString()} parameters · ${arch.memory_size} memory values`, 'policy-stats'));
+    const log = element('div', undefined, 'reply-log'); log.tabIndex = 0;
+    log.setAttribute('aria-label', `${agent.name} public notes for selected update`);
+    log.append(element('p', snapshot.note));
+    for (const call of snapshot.calls) {
+      let detail = call.tool.replaceAll('_', ' ');
+      if (!call.done) detail += ' · requested';
+      if (call.updates) detail += ` · ${call.updates} values set`;
+      if (call.tests?.length) {
+        const checked = call.tests.filter(t => t.matches_expected !== null);
+        detail += ` · ${call.tests.length} inputs · ${checked.filter(t => t.matches_expected).length}/${checked.length} expectations matched`;
+      }
+      log.append(element('p', detail, 'tool'));
+      if (call.reason) log.append(element('p', call.reason, 'tool-reason'));
+      if (call.error) log.append(element('p', call.error, 'error'));
+    }
+    if (historySelection[agentIndex] === null && agent.error) log.append(element('p', agent.error, 'error'));
+    card.append(log);
+    if (context_requests.length) {
+      const requests = element('details', undefined, 'context-requests');
+      requests.open = true;
+      requests.append(element('summary', `Context requests (${context_requests.length})`));
+      for (const request of context_requests) {
+        const item = element('div', undefined, 'context-request');
+        item.append(element('span', `After game ${request.after_game} · ${request.status === "awaiting_approval" ? "approval required" : "requested"}`, 'reply-meta'),
+          element('p', request.request), element('p', request.reason, 'tool-reason'));
+        requests.append(item);
+      }
+      card.append(requests);
+    }
+    return card;
   });
   $('replies').replaceChildren(...cards);
-  cards.forEach((card, index) => {
-    const log = card.querySelector('.reply-log'), old = positions[index];
-    log.scrollTop = !old || old.bottom ? log.scrollHeight : old.top;
-  });
 }
 async function poll() {
   if (polling || launching) return; polling = true;
@@ -151,76 +255,43 @@ async function poll() {
     if (version !== generation) return;
     if (data.run !== activeRun) resetRun(data.run);
     runToken = data.run_token;
-    $('new-run').disabled = !data.can_start;
-    $('run-games').disabled = !data.can_start;
+    canStart = data.can_start;
+    idleState = data.initial_state || idleState;
     demo = data.demo;
-    if (!demo) { $('status').textContent = 'Ready for a new run'; return; }
+    if (!demo) { $('status').textContent = 'No training session'; return; }
     updateTally();
-    $('run-message').textContent = demo.error || (data.can_start ?
-      'New run starts both agents with the same fresh random weights.' :
-      'Run active · Characters switch each game · Both agents edit after each game');
-    fallback = false; $('player').hidden = true; canvas.hidden = false; $('controls').hidden = false;
-    $('mode-note').textContent = `${data.run} · Playback stays in this browser`;
-    $('status').textContent = `${demo.games.length}/${demo.games_requested} games ready · ${demo.phase.replaceAll('_', ' ')}`;
-    const ready = new Set(demo.games.map(game => game.number));
-    const options = [...Array(demo.games_requested)].map((_, i) => {
-      const option = element('option', `Game ${i + 1}${ready.has(i + 1) ? '' : ' · waiting'}`);
-      option.value = i + 1; option.disabled = !ready.has(i + 1); return option;
-    });
-    if ($('game').options.length !== options.length || [...$('game').options].some((option, i) => option.disabled !== options[i].disabled)) $('game').replaceChildren(...options);
-    $('game').value = selected; $('game').disabled = !ready.size;
-    const rounds = [...new Set([...demo.edit_rounds.map(round => round.after_game), demo.editing_after_game].filter(Boolean))].sort((a,b) => a-b);
-    const chosen = $('edit-round').value || 'latest';
-    if ($('edit-round').options.length !== rounds.length + 1) {
-      const latest = element('option', 'Latest · follow live'); latest.value = 'latest';
-      $('edit-round').replaceChildren(latest, ...rounds.map(round => {
-        const option = element('option', `After game ${round}`); option.value = round; return option;
-      })); $('edit-round').value = chosen;
-    }
-    const after = chosen === 'latest' ? rounds.at(-1) : Number(chosen);
-    if (after) {
-      const replies = await get(`/api/replies?after=${after}`);
-      if (version !== generation) return;
-      renderReplies(replies);
-    } else $('replies').textContent = 'The first edit round starts after game 1.';
-    if (!replay && ready.has(1)) await selectGame(1, true);
-    syncControls();
+    $('status').textContent = demo.phase === 'playing' ? `Game ${demo.viewing_game}` :
+      demo.phase === 'ready' ? 'Ready' : ['initializing','preparing_agents'].includes(demo.phase) ? 'Initializing policies' :
+      demo.phase === 'editing' ? 'Waiting for agents' : demo.phase.replaceAll('_', ' ');
+    if (demo.paused) $('status').textContent = 'Paused';
+    const policies = await get('/api/policy-history');
+    if (version !== generation) return;
+    renderPolicies(policies);
+    if (demo.phase === 'stopped') playing = false;
+    if (!replay && demo.phase !== 'stopped' && demo.games.length) await selectGame(demo.viewing_game || 1, true);
+    syncControls(); draw();
   } catch (error) {
     if (version !== generation) return;
-    $('status').textContent = 'Connection unavailable · retrying';
-    if (!demo && !fallback) {
-      fallback = true; canvas.hidden = true; $('player').hidden = false; $('controls').hidden = true;
-      $('player').src = `/live/${encodeURIComponent(match)}/?autoplay=true&muted=true&playsInline=true`;
-      $('mode-note').textContent = 'Video stream · No replay run is configured';
-    }
+    $('status').textContent = 'Connection interrupted · retrying';
   } finally { polling = false; }
 }
-$('new-run').addEventListener('click', async () => {
+async function control(path) {
   if (launching || !runToken) return;
   launching = true; ++generation; ++requestId;
-  $('new-run').disabled = true; $('run-games').disabled = true;
-  $('run-message').textContent = 'Starting a new run…';
+  playing = false; syncControls();
   try {
-    const response = await fetch('/api/runs', {method:'POST',
-      headers:{'Content-Type':'application/json', 'X-Run-Token':runToken},
-      body:JSON.stringify({games:Number($('run-games').value)}), signal:AbortSignal.timeout(15000)});
-    if (!response.ok) throw new Error(response.status === 409 ? 'A run is already active.' : `Could not start the run (${response.status}).`);
-    const data = await response.json(); resetRun(data.run);
-    demo = {games:[], agents:[{name:'Astra'}, {name:'Fable'}]}; updateTally(); syncControls();
-    $('run-message').textContent = 'New run started. Waiting for game 1…';
+    const data = await post(path);
+    if (path === '/api/reset') { resetRun(data.run); demo = null; }
+    else if (path === '/api/pause' || path === '/api/resume') { demo.paused = path === '/api/pause'; playing = true; }
+    else { canStart = false; demo.phase = 'rematch'; }
   } catch (error) {
-    $('run-message').textContent = `${error.message} Check the run status before you try again.`;
-  } finally { launching = false; poll(); }
-});
-$('play').addEventListener('click', () => {if (!replay) return; if (frame >= replay.frames.length) frame = 0; playing = !playing; endWait = 0; syncControls(); draw();});
-$('restart').addEventListener('click', () => {frame = 0; endWait = 0; syncControls(); draw();});
-$('game').addEventListener('change', () => selectGame(Number($('game').value), playing));
-$('next').addEventListener('click', () => selectGame(selected + 1, playing));
-$('speed').addEventListener('change', () => {speed = Number($('speed').value); draw();});
-$('seek').addEventListener('input', () => {frame = Number($('seek').value); endWait = 0; syncControls(); draw();});
-$('edit-round').addEventListener('change', () => {replyKey = ''; poll();});
-$('reconnect').addEventListener('click', () => {if (fallback) $('player').src = $('player').src; poll();});
-Promise.all(['/assets/background.jpg', '/assets/grimes-sprites.png', '/assets/shoggoth-sprites.png'].map(src => new Promise((resolve, reject) => {
+    $('status').textContent = error.message;
+  } finally { launching = false; syncControls(); poll(); }
+}
+$('start').addEventListener('click', () => control(demo?.paused ? '/api/resume' : demo?.phase === 'ready' ? '/api/runs' : '/api/pause'));
+$('reset').addEventListener('click', () => control('/api/reset'));
+$('speed').addEventListener('change', () => {speed = Number($('speed').value);});
+Promise.all(['/assets/background.jpg', '/assets/grimes-sprites-large.png', '/assets/shoggoth-sprites-large.png'].map(src => new Promise((resolve, reject) => {
   const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src;
-}))).then(images => {assets = images; draw();}).catch(() => {$('playback-status').textContent = 'Game images could not load.';});
+}))).then(images => {assets = images; draw();}).catch(() => {$('status').textContent = 'Game images could not load.';});
 poll(); setInterval(poll, 1500); requestAnimationFrame(animate);

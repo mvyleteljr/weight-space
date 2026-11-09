@@ -1,4 +1,4 @@
-"""Strict output schema for the seven trusted data tools."""
+"""Strict output schema for the trusted architecture, weight, and testing tools."""
 
 
 def obj(properties):
@@ -14,6 +14,15 @@ UPDATE = obj({"layer": INTEGER, "row": INTEGER, "column": {"type": ["integer", "
 CASE = obj({"inputs": {"type": "array", "items": {"type": "number"}, "minItems": 31, "maxItems": 31},
             "expected_action": {"type": ["integer", "null"]}})
 ARGUMENTS = {
+    "set_action_feedback": obj({"enabled": BOOLEAN, "reason": REASON}),
+    "request_context": obj({"request": REASON, "reason": REASON}),
+    "set_architecture": obj({"reason": REASON, "layers": {"type": "array", "minItems": 1, "maxItems": 8,
+        "items": obj({"width": {"type": "integer", "minimum": 1, "maximum": 64},
+                      "type": {"type": "string", "enum": ["dense", "recurrent"]},
+                      "activation": {"type": "string", "enum": ["linear", "relu", "tanh"]}})}}),
+    "edit_recurrent": obj({"reason": REASON, "updates": {"type": "array", "items": UPDATE, "maxItems": 418}}),
+    "test_sequence": obj({"cases": {"type": "array", "items": CASE, "minItems": 1, "maxItems": 8}}),
+
     "info": obj({}),
     "read_steps": obj({"start": INTEGER, "count": INTEGER, "stride": INTEGER}),
     "inspect_step": obj({"step": INTEGER, "original": BOOLEAN}),
@@ -25,7 +34,7 @@ ARGUMENTS = {
 }
 TOOL_REPLY_SCHEMA = obj({
     "note": {"type": "string", "maxLength": 300},
-    "calls": {"type": "array", "minItems": 1, "maxItems": 4, "items": {
+    "calls": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
         "anyOf": [obj({"tool": {"type": "string", "enum": [name]}, "arguments": arguments})
                   for name, arguments in ARGUMENTS.items()]}},
 })
