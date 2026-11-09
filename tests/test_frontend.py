@@ -1,4 +1,5 @@
 import json
+import gzip
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import tempfile
@@ -32,6 +33,10 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual([f['step'] for f in replay['frames']], [1, 2, 3])
         self.assertEqual([f['health'] for f in replay['frames'][-1]['fighters']], replay['result']['health'])
         self.assertNotIn('observations', replay['frames'][0])
+        self.assertEqual(replay['decision_frames'],3)
+        self.assertEqual(len(replay['activity']),2)
+        self.assertEqual(replay['activity_stride'],2)
+        self.assertEqual(replay['networks'][0]['inputs'],33)
         with self.assertRaises(ValueError):
             self.store.game(1)
 
@@ -89,6 +94,11 @@ class FrontendTests(unittest.TestCase):
             (self.root / 'demo.json').write_text(json.dumps(self.status))
             with urlopen(base + '/api/games/10') as response:
                 self.assertEqual(json.load(response)['number'], 10)
+            with urlopen(Request(base+'/api/games/2',headers={'Accept-Encoding':'gzip'})) as response:
+                self.assertEqual(response.headers['Content-Encoding'],'gzip')
+                game=json.loads(gzip.decompress(response.read()))
+                self.assertEqual(game['player_agents'],[2,1])
+                self.assertEqual(len(game['activity'][0]),2)
             audio=self.root/'after/spectator-audio-v1.wav'
             audio.write_bytes(b'RIFF'+bytes(range(100)))
             url=base+'/api/games/2/audio.wav?run='+self.root.name

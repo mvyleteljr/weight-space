@@ -4,6 +4,7 @@ Use a production HTTPS reverse proxy in front of this server for remote viewers.
 The launcher requires a loopback bind and same-origin requests.
 """
 import argparse
+import gzip
 import json
 import mimetypes
 import os
@@ -40,7 +41,13 @@ class ReplayStore:
                 name = {1: "before", 2: "after"}.get(number, f"game-{number}")
                 folder = self.directory / name
                 manifest = json.loads((folder / "manifest.json").read_text())
-                frames = [json.loads(line)["state"] for line in (folder / "steps.jsonl").read_text().splitlines()]
+                rows = [json.loads(line) for line in (folder / "steps.jsonl").read_text().splitlines()]
+                frames = [row["state"] for row in rows]
+                from weight_space.network import load, architecture
+                from .policy_activity import recorded_activity
+                models = [load(folder/f'player-{player}.json') for player in (1,2)]
+                stride = max(1, manifest['game']['fps']//30)
+                activity = recorded_activity(models, rows, stride)
                 from Street_Fighter.src.arena import ending_states
                 ending = ending_states(frames[-1]) if frames else []
                 if ending:
@@ -49,6 +56,8 @@ class ReplayStore:
                 self.cache[number] = {"number": number, "player_agents": entry.get("player_agents", [1, 2]),
                                       "fps": manifest["game"]["fps"], "initial_state": manifest["initial_state"],
                                       "frames": frames, "result": entry["result"],
+                                      "networks": [architecture(model, include_connections=True) for model in models],
+                                      "activity": activity, "activity_stride": stride, "decision_frames": len(rows),
                                       "audio_url": f"/api/games/{number}/audio.wav?run={self.directory.name}"}
             return self.cache[number]
 
@@ -207,8 +216,14 @@ class SpectatorHandler(BaseHTTPRequestHandler):
 
     def send_json(self, value):
         body = json.dumps(value, allow_nan=False).encode()
+        compressed = len(body) > 4096 and 'gzip' in self.headers.get('Accept-Encoding', '')
+        if compressed:
+            body = gzip.compress(body, compresslevel=1)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header('Vary', 'Accept-Encoding')
+        if compressed:
+            self.send_header('Content-Encoding', 'gzip')
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")

@@ -381,12 +381,21 @@ explicit approval before changing the environment. No change is applied automati
 The saved request does not itself send a chat notification; the assistant must
 monitor the run or inspect it on the next interaction.
 
-Network diagrams show every neuron as a small dot. Select a neuron with a click
-or Enter/Space to reveal its incoming and outgoing weights. Lines are grayscale: brightness
-scales with absolute weight divided by the largest absolute weight in the whole
-destination layer. Hover a line for its exact signed value; zero weights are dark.
-Gray loops denote recurrent state; they are schematic, not individual recurrent weights.
-These diagrams show weights, not live activations. Wide networks scroll horizontally; history still browses independently.
+Network diagrams show every neuron and every feedforward connection. During play,
+input values, hidden-layer outputs, and final action logits update with the displayed
+game (sampled at 30 Hz). Zero-valued nodes have black centers and gray outlines;
+nonzero brightness scales by absolute value relative to the maximum in that layer.
+The chosen action gets a white outline. Each connection shows its current signal
+(source activation × weight), normalized by the largest absolute signal in that
+connection layer. Hover nodes or lines for signed values and original weights.
+These display-only scales never change network calculations or decisions.
+
+The server reconstructs activity from the frozen policies and recorded observations,
+advancing recurrent memory and previous-action feedback on every game tick, and
+checks every chosen action against the recording. Character swaps map activity to
+the correct agent. History views and times without a policy decision show weights
+only, with hollow neurons. Gray loops denote recurrent state; they are schematic,
+not individual recurrent weights. Wide networks scroll horizontally.
 
 Previous-action feedback is optional: agents call `set_action_feedback` with
 `enabled: true` to add input 33. Its value is the previous selected action ID / 17,

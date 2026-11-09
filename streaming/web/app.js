@@ -4,6 +4,7 @@ const gameAudio = new GameAudio();
 let idleState = null, demo = null, replay = null, selected = 1, frame = 0, playing = false, speed = 1;
 let requestId = 0, lastTime = 0, endWait = 0, assets = null, replyKey = '', polling = false;
 let policyData = null;
+let activityViews = [];
 const historySelection = [null, null];
 let activeRun = null, runToken = null, launching = false, canStart = false, generation = 0;
 let acknowledged = 0, acknowledging = false, ackRetryAt = 0;
@@ -13,7 +14,7 @@ function resetRun(name) {
   frame = 0; endWait = 0; playing = false; replyKey = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   $('replies').replaceChildren();
-  historySelection.fill(null); policyData = null;
+  historySelection.fill(null); policyData = null; activityViews = [];
   acknowledged = 0; acknowledging = false; ackRetryAt = 0;
 
 }
@@ -86,6 +87,7 @@ async function selectGame(number, autoplay = false) {
     await gameAudio.load(data.audio_url);
     if (token !== requestId) return;
     replay = data; selected = number; frame = 0; endWait = 0; playing = autoplay;
+    replyKey = ''; if (policyData) renderPolicies(policyData);
     syncControls(); draw();
   } catch (error) { if (token === requestId) { playing = autoplay; endWait = 0; syncControls(); $('status').textContent = error.message; } }
 }
@@ -93,6 +95,7 @@ function draw() {
   if (!assets || (!replay && !idleState)) return;
   const index = replay ? Math.min(replay.frames.length, Math.floor(frame)) : 0;
   const state = index ? replay.frames[index - 1] : (replay?.initial_state || idleState);
+  updatePolicyActivity(index);
   ctx.drawImage(assets[0], 0, 0, 1000, 600);
   for (const cube of state.powerups || []) {
     if (!cube.available) continue;
@@ -126,6 +129,18 @@ function draw() {
     ctx.textAlign = 'left';
   }
 }
+
+function updatePolicyActivity(index) {
+  for (const view of activityViews) {
+    if (!view.live) continue;
+    const sample = index > 0 && index <= replay.decision_frames ?
+      replay.activity?.[Math.floor((index-1)/(replay.activity_stride || 1))]?.[view.slot] : null;
+    if (sample === view.previous) continue;
+    view.previous = sample;
+    view.svg.updateActivity(sample);
+    view.legend.textContent = sample ? 'Signals · brightness normalized per layer' : 'Weights · no current decision';
+  }
+}
 function animate(now) {
   const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.1) : 0; lastTime = now;
   if (replay && playing && !demo?.paused) {
@@ -143,7 +158,9 @@ function animate(now) {
 
 function renderPolicies(data) {
   policyData = data;
-  const key = JSON.stringify([data, historySelection]); if (key === replyKey) { document.querySelectorAll('.reply-card-top .badge').forEach((badge,i) => { badge.textContent = agentProgress(data.agents[i].agent, demo?.phase); }); return; } replyKey = key;
+  const liveGame = !!replay?.networks && demo?.phase === 'playing' && demo.viewing_game === selected;
+  const key = JSON.stringify([data, historySelection, liveGame, replay?.number]); if (key === replyKey) { document.querySelectorAll('.reply-card-top .badge').forEach((badge,i) => { badge.textContent = agentProgress(data.agents[i].agent, demo?.phase); }); return; } replyKey = key;
+  activityViews = [];
   const cards = data.agents.map(({agent, snapshots, context_requests = []}, agentIndex) => {
     const card = element('article', undefined, 'reply-card');
     const top = element('div', undefined, 'reply-card-top');
@@ -152,7 +169,10 @@ function renderPolicies(data) {
     if (!snapshots.length) { card.append(element('p', 'Waiting for the first policy…')); return card; }
     let index = historySelection[agentIndex] === null ? snapshots.length - 1 : snapshots.findIndex(s => s.id === historySelection[agentIndex]);
     if (index < 0) index = snapshots.length - 1;
-    const snapshot = snapshots[index], arch = snapshot.architecture;
+    const snapshot = snapshots[index];
+    const slot = (replay?.player_agents || [1,2]).indexOf(agentIndex+1);
+    const live = liveGame && historySelection[agentIndex] === null && slot >= 0;
+    const arch = live ? replay.networks[slot] : snapshot.architecture;
     const nav = element('div', undefined, 'policy-nav');
     const previous = element('button', '←'), next = element('button', '→');
     previous.setAttribute('aria-label', `${agent.name}: previous policy update`);
@@ -162,8 +182,12 @@ function renderPolicies(data) {
     next.onclick = () => {historySelection[agentIndex] = index+1 === snapshots.length-1 ? null : snapshots[index+1].id; renderPolicies(policyData);};
     nav.append(previous, next);
     card.append(nav, element('p', `${snapshot.after_game === 0 ? 'Before game 1' : `After game ${snapshot.after_game}`} · ${snapshot.stage}`, 'reply-meta'));
-    const diagram = element('div', undefined, 'policy-diagram'); diagram.append(architectureDiagram(arch)); card.append(diagram);
-    card.append(element('p', 'Select a neuron · hover a connection for its weight', 'network-legend'));
+    const diagram = element('div', undefined, 'policy-diagram'), svg = architectureDiagram(arch);
+    diagram.append(svg); card.append(diagram);
+    const legend = element('p', 'Weights · no current decision', 'network-legend');
+    legend.title = 'Node brightness = |activation| / layer maximum. Line brightness = |source × weight| / connection-layer maximum during play; weights otherwise. Hover for signed values. The outlined output is the chosen action.';
+    card.append(legend);
+    activityViews.push({svg, legend, slot, live, previous:undefined});
     card.append(element('p', `${arch.parameters.toLocaleString()} parameters · ${arch.memory_size} memory values`, 'policy-stats'));
     const log = element('div', undefined, 'reply-log'); log.tabIndex = 0;
     log.setAttribute('aria-label', `${agent.name} public notes for selected update`);
@@ -197,6 +221,7 @@ function renderPolicies(data) {
     return card;
   });
   $('replies').replaceChildren(...cards);
+  updatePolicyActivity(replay ? Math.min(replay.frames.length,Math.floor(frame)) : 0);
 }
 async function poll() {
   if (polling || launching) return; polling = true;

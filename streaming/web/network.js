@@ -1,11 +1,11 @@
 function architectureDiagram(architecture) {
   const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
   const layers = [{width:architecture.inputs, type:'input'}, ...architecture.layers];
-  const width = Math.max(400, layers.length * 125);
-  const span = Math.max(160, Math.max(...layers.map(l => l.width)) * 5);
+  const width = Math.max(400, layers.length * 130);
+  const span = Math.max(180, Math.max(...layers.map(l => l.width)) * 7);
   const height = span + 110;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.style.minWidth = `${Math.min(width, 400)}px`;
+  svg.style.minWidth = `${layers.length * 85}px`;
   svg.setAttribute('role', 'group');
   svg.setAttribute('aria-label', 'Policy network: ' + layers.map(l => `${l.width} ${l.type} ${l.activation || ''}`).join(' → '));
   const add = (tag, attrs, text, parent=svg) => {
@@ -15,57 +15,63 @@ function architectureDiagram(architecture) {
     parent.append(node); return node;
   };
   const xs = layers.map((_,i) => 48 + i * (width-96)/(layers.length-1));
-  const y = (layer,id) => 52 + span/2 + (id-(layers[layer].width-1)/2) * Math.min(11, span/Math.max(1,layers[layer].width-1));
-  const nodes = [];
-  let selection = [layers.length-1, 0];
-  // Layer links give an uncluttered overview. Inspect one neuron for actual weights.
-  for (let i=1; i<layers.length; i++) {
-    add('path',{d:`M ${xs[i-1]+10} ${55+span/2} H ${xs[i]-10}`,stroke:'#384653','stroke-width':1,fill:'none'});
-  }
-  const edges = add('g', {});
-  // Normalize against the entire destination layer, not just the selected neuron.
-  const layerMaxima = architecture.layers.map(layer =>
-    Math.max(0, ...(layer.connections || []).map(edge => Math.abs(edge.weight))));
-  const inspect = (li,id) => {
-    selection = [li,id];
-    nodes.forEach(({node,layer,index}) => node.setAttribute("aria-pressed", String(layer===li && index===id)));
-    edges.replaceChildren();
-    architecture.layers.forEach((layer,k) => {
-      const to = k+1;
-      for (const edge of layer.connections || []) {
-        if (!((li === to && edge.to === id) || (li === k && edge.from === id))) continue;
-        const brightness = Math.round(70 + 170 * (layerMaxima[k] ? Math.abs(edge.weight) / layerMaxima[k] : 0));
-        const d = `M ${xs[k]+4} ${y(k,edge.from)} L ${xs[to]-4} ${y(to,edge.to)}`;
-        const label = `L${k} W[${edge.to}][${edge.from}] = ${edge.weight}`;
-        const group = add('g', {}, undefined, edges);
-        add('path',{d,stroke:`rgb(${brightness}, ${brightness}, ${brightness})`,
-          'stroke-width':0.8,fill:'none','pointer-events':'none'}, undefined, group);
-        const hit = add('path',{d,stroke:'transparent','stroke-width':6,fill:'none',
-          'pointer-events':'stroke','aria-label':label,class:'network-weight-hit'}, undefined, group);
-        add('title',{},label,hit);
-      }
-    });
-  };
-  layers.forEach((layer,i) => {
+  const y = (layer,id) => 52 + span/2 + (id-(layers[layer].width-1)/2) * Math.min(13, span/Math.max(1,layers[layer].width-1));
+  const gray = value => `rgb(${value}, ${value}, ${value})`;
+  const maximum = values => values.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+  const edges = architecture.layers.map((layer,k) => (layer.connections || []).map(edge => {
+    const group=add('g',{class:'network-edge'});
+    const d=`M ${xs[k]+3} ${y(k,edge.from)} L ${xs[k+1]-3} ${y(k+1,edge.to)}`;
+    const line=add('path',{d,fill:'none','stroke-width':.55,'pointer-events':'none'},undefined,group);
+    const hit=add('path',{d,fill:'none',stroke:'transparent','stroke-width':3,'pointer-events':'stroke',class:'network-weight-hit'},undefined,group);
+    const title=add('title',{},'',hit);
+    return {...edge,line,hit,title};
+  }));
+  const nodes=layers.map((layer,i) => {
     const x=xs[i], output=i===layers.length-1;
     add('text',{x,y:19,'text-anchor':'middle',class:'network-label'},i===0 ? 'Inputs' : output ? 'Actions' : `Layer ${i}`);
     add('text',{x,y:38,'text-anchor':'middle',class:'network-count'},`${layer.width}${i ? ' · '+layer.activation : ''}`);
-    for (let id=0; id<layer.width; id++) {
-      const circle=add('circle',{cx:x,cy:y(i,id),r:2.5,fill:'currentColor',
-        tabindex:0,role:'button','aria-label':i===0 ? (architecture.action_feedback && id===architecture.inputs-1 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id}`,class:'network-neuron'});
-      add('title',{},i===0 ? (architecture.action_feedback && id===architecture.inputs-1 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id} · bias ${layer.biases?.[id] ?? 'unavailable'}`,circle);
-      nodes.push({node:circle,layer:i,index:id});
-      circle.addEventListener('keydown',event=>{if (event.key==='Enter' || event.key===' ') {event.preventDefault();inspect(i,id);}});
-      circle.addEventListener('click',()=>inspect(i,id));
+    const circles=[];
+    for (let id=0;id<layer.width;id++) {
+      const label=i===0 ? (architecture.action_feedback && id===architecture.inputs-1 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : output ? `Action ${id} logit` : `Layer ${i} neuron ${id}`;
+      const circle=add('circle',{cx:x,cy:y(i,id),r:2.5,fill:'#000',stroke:'#888','stroke-width':.7,tabindex:0,role:'img',class:'network-neuron'});
+      const title=add('title',{},'',circle);
+      circles.push({circle,title,label});
     }
     if (layer.type==='recurrent') {
-      add('path',{d:`M ${x+8} ${55+span} C ${x+34} ${55+span} ${x+34} 55 ${x+8} 55 l 4 -3 m -4 3 l 4 3`,fill:'none',stroke:'#aaa','stroke-width':1});
+      const loop=add('path',{d:`M ${x+8} ${55+span} C ${x+34} ${55+span} ${x+34} 55 ${x+8} 55 l 4 -3 m -4 3 l 4 3`,fill:'none',stroke:'#777','stroke-width':1});
+      add('title',{},'Recurrent memory; neuron values include its contribution.',loop);
     }
     add('text',{x,y:height-25,'text-anchor':'middle',class:'network-label'},i ? (layer.type==='recurrent' ? 'Recurrent · memory' : 'Dense') : 'Observation');
-
+    return circles;
   });
-  inspect(...selection);
+  svg.updateActivity = activity => {
+    const values=activity?.values;
+    svg.setAttribute('data-activity',values ? 'live' : 'weights');
+    nodes.forEach((layer,k) => {
+      const scale=values ? maximum(values[k]) : 0;
+      layer.forEach(({circle,title,label},id) => {
+        const value=values?.[k]?.[id];
+        const brightness=value && scale ? Math.round(24+231*Math.abs(value)/scale) : 0;
+        circle.setAttribute('fill',gray(brightness));
+        const selected=k===nodes.length-1 && activity?.action===id;
+        circle.setAttribute('stroke',selected ? '#fff' : '#888');
+        circle.setAttribute('stroke-width',selected ? 1.5 : .7);
+        const description=`${label}: ${value === undefined ? 'no current decision' : value}${selected ? ' · selected action' : ''}`;
+        circle.setAttribute('aria-label',description); title.textContent=description;
+      });
+    });
+    edges.forEach((layer,k) => {
+      const signals=layer.map(edge => values ? values[k][edge.from]*edge.weight : edge.weight);
+      const scale=maximum(signals);
+      layer.forEach((edge,index) => {
+        const brightness=Math.round(32+208*(scale ? Math.abs(signals[index])/scale : 0));
+        edge.line.setAttribute('stroke',gray(brightness));
+        const label=`L${k+1} W[${edge.to}][${edge.from}] = ${edge.weight}` + (values ? ` · source = ${values[k][edge.from]} · signal = ${signals[index]}` : ' · weight only');
+        edge.hit.setAttribute('aria-label',label); edge.title.textContent=label;
+      });
+    });
+  };
+  svg.updateActivity(null);
   return svg;
 }
-
 if (typeof module !== 'undefined') module.exports = {architectureDiagram};
