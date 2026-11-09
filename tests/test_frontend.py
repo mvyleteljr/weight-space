@@ -32,10 +32,11 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual(replay['fps'], 60)
         self.assertEqual([f['step'] for f in replay['frames']], [1, 2, 3])
         self.assertEqual([f['health'] for f in replay['frames'][-1]['fighters']], replay['result']['health'])
+        self.assertEqual([f['damage_dealt'] for f in replay['frames'][-1]['fighters']], replay['result']['damage_dealt'])
         self.assertNotIn('observations', replay['frames'][0])
         self.assertEqual(replay['decision_frames'],3)
-        self.assertEqual(len(replay['activity']),2)
-        self.assertEqual(replay['activity_stride'],2)
+        self.assertEqual(len(replay['activity']),3)
+        self.assertEqual(replay['activity_stride'],1)
         self.assertEqual(replay['networks'][0]['inputs'],33)
         with self.assertRaises(ValueError):
             self.store.game(1)
@@ -84,6 +85,17 @@ class FrontendTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         base = f'http://127.0.0.1:{server.server_port}'
         try:
+            (self.root / 'bg1.jpg').write_bytes(b'static-background')
+            with urlopen(base + '/assets/background.jpg') as response:
+                self.assertEqual(response.read(), b'static-background')
+                self.assertEqual(response.headers['Content-Type'], 'image/jpeg')
+            (self.root / 'anthropic-church-animated-1000x600.apng').write_bytes(b'animated-background')
+            with urlopen(base + '/assets/background.jpg') as response:
+                self.assertEqual(response.read(), b'animated-background')
+                self.assertEqual(response.headers['Content-Type'], 'image/png')
+            (self.root / 'anthropic-church-animated-1000x600.apng').unlink()
+            with urlopen(base + '/assets/background.jpg') as response:
+                self.assertEqual(response.read(), b'static-background')
             with urlopen(base + '/api/run') as response:
                 self.assertEqual(json.load(response)['demo']['games'][0]['number'], 2)
             with urlopen(base + '/api/policy-history') as response:

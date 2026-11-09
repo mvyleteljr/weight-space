@@ -7,19 +7,16 @@
 </head>
 <body>
   <main>
-    <section class="arena" aria-label="Live match">
-
-      <div class="screen"><canvas id="arena" width="1000" height="600" aria-label="Game"></canvas><iframe id="player" hidden title="Street Fighter live video" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
-      <div class="controls" id="controls">
-        <div class="control-row">
-          <button id="start" disabled>Initializing…</button>
-          <button id="mute" aria-pressed="false">Mute</button>
-          <label>Speed <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
-          <button id="reset">Reset</button>
-          <span id="status" role="status">Initializing…</span>
-        </div>
+    <div class="controls" id="controls">
+      <div class="control-row">
+        <button id="start" disabled>Initializing…</button>
+        <button id="autoplay" disabled aria-pressed="false">Start autoplay</button>
+        <button id="mute" aria-pressed="false">Mute</button>
+        <label>Speed <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+        <button id="reset">Reset</button>
+        <span id="status" role="status" hidden>Initializing…</span>
       </div>
-    </section>
+    </div>
     <section class="run-overview" aria-label="Training score">
       <div class="run-panel">
         <div class="scoreboard" aria-label="Run tally" role="status"><div><span id="score-name-1">Astra</span><strong id="score-1">0</strong></div><span class="versus">VS</span><div><span id="score-name-2">Opus 5.5</span><strong id="score-2">0</strong></div></div>
@@ -29,10 +26,11 @@
 
     </section>
 
+    <section class="arena" aria-label="Live match">
+      <div class="screen"><img id="background" alt="" aria-hidden="true"><canvas id="arena" width="1000" height="533" aria-label="Game"></canvas><iframe id="player" hidden title="Street Fighter live video" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
+    </section>
 
-
-    <section class="reply-section" aria-labelledby="reply-title">
-      <h2 id="reply-title">Policies</h2>
+    <section class="reply-section" aria-label="Model updates">
       <div id="replies" class="reply-grid"></div>
     </section>
   </main>

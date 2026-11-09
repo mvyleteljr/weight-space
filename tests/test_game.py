@@ -349,6 +349,7 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual(result["reason"], "knockout")
         arena = Arena(max_steps=1)
         arena.fighters[1].health = 90
+        arena.fighters[0].damage_dealt = 10
         result = arena.step([0, 0])
         self.assertTrue(result["truncated"])
         self.assertEqual(result["winner"], 1)
@@ -397,6 +398,7 @@ class MatchTests(unittest.TestCase):
                 self.assertEqual(outcome["state"], row["state"])
                 self.assertEqual(outcome["rewards"], row["rewards"])
             self.assertEqual(replay.winner, result["winner"])
+            self.assertEqual(result["damage_dealt"], [f.damage_dealt for f in replay.fighters])
             with self.assertRaises(FileExistsError):
                 match(first, second, root / "match", max_steps=180)
 

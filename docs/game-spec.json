@@ -1,5 +1,5 @@
 {
-  "version": "street-fighter-v2",
+  "version": "street-fighter-v3",
   "fps": 60,
   "width": 1000,
   "height": 600,
@@ -47,6 +47,7 @@
     2
   ],
   "rules": [
+    "A knockout wins immediately. At timeout, more cumulative damage dealt wins; equal damage is a draw. Count actual HP removed before healing, excluding overkill. Healing never reduces damage points.",
     "Each character has one full-health cube at the opposite edge; only its owner collects it by body contact, even at full health. It does not respawn. Collection occurs after damage and cannot revive a knockout.",
     "Solid body regions prevent walking through opponents. Vertical clearance allows jumping over them.",
     "Grimes turns immediately; Shoggoth waits 12 ticks after a side change and does not turn during an attack.",

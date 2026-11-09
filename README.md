@@ -383,11 +383,17 @@ monitor the run or inspect it on the next interaction.
 
 Network diagrams show every neuron and every feedforward connection. During play,
 input values, hidden-layer outputs, and final action logits update with the displayed
-game (sampled at 30 Hz). Zero-valued nodes have black centers and gray outlines;
-nonzero brightness scales by absolute value relative to the maximum in that layer.
-The chosen action gets a white outline. Each connection shows its current signal
+game on the exact simulation tick (60 Hz at 1×). Inputs and hidden layers use
+absolute magnitude relative to their layer maximum; zeros have black centers.
+Action brightness instead scales signed logits from lowest (black) to highest
+(white), so a rejected negative score cannot look stronger than the winning score.
+The chosen action is larger with a white outline, including ties and all-zero scores.
+A short caption distinguishes the requested action from actual horizontal motion:
+knockback, body collisions, hit reactions, and recovery can override movement.
+Each connection shows its current signal
 (source activation × weight), normalized by the largest absolute signal in that
-connection layer. Hover nodes or lines for signed values and original weights.
+connection layer. Immediate tooltips show input meanings, hidden-neuron values,
+action names, or signed connection signals and weights.
 These display-only scales never change network calculations or decisions.
 
 The server reconstructs activity from the frozen policies and recorded observations,
@@ -413,26 +419,45 @@ The training page plays recorded Python game frames. Its synchronized audio trac
 uses the original music, sword, and magic assets at their original game volumes;
 attack sounds follow recorded attack starts. The Python server renders one WAV per
 match using FFmpeg, caches it in the run, and serves it over HTTP. Install FFmpeg
-on the host to enable audio. **Mute/Unmute** sits beside Play. Audio plays only at
+on the host to enable audio. **Mute/Unmute** sits in the training toolbar. Audio plays only at
 1× and stops on pause, reset, between games, and in a hidden tab. The mute control
 is disabled at other speeds; returning to 1× rejoins the displayed game time.
 This audio path is for the training page; the separate legacy RTSP broadcaster
 still publishes video only.
 
-The web controller has **Play/Pause**, **Mute**, **Speed**, and **Reset**. Launching the
+The web controller has **Start training/Pause training**, **Start autoplay/Stop autoplay**, **Mute**, **Speed**, and **Reset**. Launching the
 server or pressing Reset starts a fresh session: identical zeroed 33–8–18 policies,
 zero scores, no old games or agent context. Both agents receive their initial
 context and can initialize weights or redesign their network. **Initializing…**
-is disabled until both agents submit their first policies. **Play** then begins
+is disabled until both agents submit their first policies. **Start training** then begins
 the 10-minute training session. Initialization failure keeps Start disabled; Reset
 retries with a fresh session.
 
 Every game appears automatically, in order. Speed changes how fast the game is
-shown. The Play button becomes Pause while running; click it again to resume. An agent update already underway can finish, but the next game waits for resume. There are no replay, seeking, or game-selection controls. The trainer
+shown. The training button becomes **Pause training** while running; **Start training** resumes it. An agent update already underway can finish, but the next game waits for resume. There are no replay, seeking, or game-selection controls. The trainer
 waits for the browser to finish each game before updating the agents, so it cannot
 skip ahead of the viewer. Closing the page leaves the trainer waiting at that game;
 reopening it continues the current game. Reset stops the trainer and its agent
 processes, clears the screen and scores, and initializes a new session.
+
+**Start autoplay** is enabled after **Pause training** or when the training time limit is reached. It freezes the accepted
+networks at that moment and plays fresh 30-second matches continuously, randomly
+assigning the characters each game. It makes no model calls and does not update
+weights, training scores, or agent context. Its separate tally is labeled Autoplay;
+speed, audio, and live network diagrams still work. An agent request already in
+flight when training was paused may finish, but cannot change the frozen autoplay
+policies. **Stop autoplay** returns to the paused training frame without resuming training.
+**Start training** stops autoplay and returns to the paused training
+frame; **Reset** stops it and initializes a fresh training session. Both disable
+Autoplay until training is paused again. Only the last two exhibition games are
+retained for playback, keeping long sessions bounded. In Autoplay, the existing
+history arrows select that agent’s saved network and restart the current matchup
+without scoring the interrupted game. Each agent can use a different revision;
+the rightmost position restores its latest network. During training the arrows
+only browse history. No training weights are overwritten. After the 10-minute limit,
+**Start training** continues the same run for another 10 minutes, retaining its
+accepted networks, scores, and game history. The agents receive their own saved
+conversation once when the trainer restarts, followed by normal round updates.
 
 Reset clears architecture, weights, recurrent state, action feedback, and agent
 context. Each agent gets a fresh private CLI session and temporary working directory.
@@ -491,3 +516,15 @@ game 1). Each assignment is an independent draw, so repeats are possible. Agent
 context, character labels, and scores follow the recorded assignment. The run seed
 reproduces assignments. CLI: `--random-sides`; do not combine with `--swap-sides`
 or `--paired-games`.
+
+### Animated browser background
+
+Place an animated PNG at `Street_Fighter/assets/images/anthropic-church-animated-1000x600.apng` and reload the
+spectator page. The web server prefers it over `bg1.jpg`; remove it to restore
+the static background. Use a 1000×600 (5:3) composition. The browser view crops
+the bottom 67 pixels, as it does for the existing background.
+
+The background animates as a native browser image beneath the transparent game
+canvas. Its timing and loop count come from the APNG: it continues while gameplay
+is paused and is independent of the speed selector. This support is for the web
+viewer; native Pygame and captured HLS output still use the static background.

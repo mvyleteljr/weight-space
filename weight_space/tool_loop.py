@@ -15,6 +15,7 @@ from .lab import WeightLab, TOOLS, SINGLE_REPLY_TOOLS
 from .network import encode, fingerprint, initialize, load, save
 from .providers import complete, ProviderSession
 from .tool_schema import TOOL_REPLY_SCHEMA, reply_schema
+from .checkpoint import current_models, conversation_history
 
 SINGLE_REPLY_SCHEMA = reply_schema(SINGLE_REPLY_TOOLS)
 
@@ -189,6 +190,12 @@ def run_agent(lab, provider, model_id, max_seconds=240, reply_timeout=120):
             attempt_prompt = ("Previous request was interrupted. No tools from its response were applied. "
                               "Respond to this request again; do not assume any proposed edits executed.\n" + prompt
                               if session is not None and session.interrupted else prompt)
+            restored = getattr(lab, 'restored_context', None)
+            if restored:
+                attempt_prompt = ("Continuing the same training run after its time limit. The following is your "
+                                  "saved conversation, for context only; do not repeat old tool calls. "
+                                  "Use the current request after the record to propose the next policy.\n"
+                                  + restored + "\nCURRENT REQUEST:\n" + attempt_prompt)
             (lab.directory / f"turn-{turn}.attempt-{timeout_retries}.prompt.txt").write_text(attempt_prompt)
             try:
                 text, metadata = complete(provider, model_id, attempt_prompt, min(reply_timeout, remaining),
@@ -270,7 +277,8 @@ def player_spec(value):
 def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                   reply_timeout=120, edit_seconds=240, swap_sides=False, paired_games=False,
                   duration_seconds=None, resume_from=None, prepare_agents=False, persistent_sessions=True,
-                  zero_initial=False, wait_for_viewer=False, wait_for_start=False, single_reply=False, random_sides=False):
+                  zero_initial=False, wait_for_viewer=False, wait_for_start=False, single_reply=False, random_sides=False,
+                  continue_run=False):
     if type(games) is not int or not 2 <= games <= 9:
         raise ValueError("Choose 2 to 9 games.")
     if random_sides and (swap_sides or paired_games):
@@ -287,7 +295,19 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
     if len(agents) != 2:
         raise ValueError("Supply exactly two players.")
     output = Path(output)
-    output.mkdir(parents=True, exist_ok=False)
+    previous_status = None
+    if continue_run:
+        if resume_from is not None:
+            raise ValueError('Choose either continuation or a new run from previous weights.')
+        previous_status = json.loads((output / 'demo.json').read_text())
+        if previous_status.get('phase') != 'complete' or not previous_status.get('games'):
+            raise ValueError('Only a completed run can be continued.')
+        agents = tuple((a['name'], a['provider'], a['model']) for a in previous_status['agents'])
+        seed, max_steps = previous_status['seed'], previous_status['max_steps']
+        swap_sides, paired_games = previous_status['swap_sides'], previous_status['paired_games']
+        random_sides = previous_status.get('random_sides', False)
+    else:
+        output.mkdir(parents=True, exist_ok=False)
     status = {"phase": "initializing", "mode": "input-tools", "seed": seed,
               "max_steps": max_steps, "pairing": "custom" if players else "astra-opus", "games_requested": games,
               "reply_timeout": reply_timeout, "edit_seconds": edit_seconds,
@@ -300,14 +320,25 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
               "agents": [{"name": name, "player": i + 1, "provider": provider,
                           "model": model, "status": "waiting"}
                          for i, (name, provider, model) in enumerate(agents)]}
+    restored_context = [None, None]
+    if previous_status:
+        restored_context = [conversation_history(output, previous_status, i + 1) for i in range(2)]
+        status = {**previous_status, 'phase': 'editing', 'started_at': time.time(),
+                  'ends_at': time.time() + duration_seconds if deadline is not None else None,
+                  'duration_seconds': duration_seconds}
+        status.pop('stop_reason', None)
+        status.pop('elapsed_seconds', None)
     publish(output / "demo.json", status)
     sessions = [ProviderSession(provider, model) if persistent_sessions and provider in ("codex", "claude") else None
                 for _, provider, model in agents]
     try:
-        initial = initialize([33, 8, 18], seed=seed, zero=zero_initial)
-        save(output / "initial.json", initial)
-        status["initial_sha256"] = fingerprint(initial)
-        current = [output / "initial.json"] * 2
+        if previous_status:
+            current = current_models(output, previous_status)
+        else:
+            initial = initialize([33, 8, 18], seed=seed, zero=zero_initial)
+            save(output / "initial.json", initial)
+            status["initial_sha256"] = fingerprint(initial)
+            current = [output / "initial.json"] * 2
         if resume_from is not None:
             previous = Path(resume_from)
             previous_status = json.loads((previous / "demo.json").read_text())
@@ -333,6 +364,9 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
 
         orders = {}
         assignment_rng = random.Random(seed)
+        if previous_status and random_sides:
+            for _ in status['games']:
+                assignment_rng.getrandbits(1)
         def order_for(number):
             if number not in orders:
                 swapped = bool(assignment_rng.getrandbits(1)) if random_sides else swap_sides and number % 2 == 0
@@ -363,13 +397,19 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
             status["tally"]["games"] += 1
             publish(output / "demo.json", status)
 
-        if not prepare_agents:
+        if not prepare_agents and not previous_status:
             play(1)
             if paired_games:
                 play(2)
         prior = [None, None]
-        completed_game = 0 if prepare_agents else (2 if paired_games else 1)
-        while (time.monotonic() < deadline if deadline is not None else completed_game < games):
+        if previous_status:
+            for entry in previous_status['edit_rounds']:
+                for i, agent in enumerate(entry['agents']):
+                    if agent.get('status') == 'submitted':
+                        prior[i] = agent
+        completed_game = len(status['games']) if previous_status else (0 if prepare_agents else (2 if paired_games else 1))
+        game_limit = completed_game + games if previous_status else games
+        while (time.monotonic() < deadline if deadline is not None else completed_game < game_limit):
             wait_if_paused()
             if deadline is not None:
                 status["games_requested"] = completed_game + (2 if paired_games else 1)
@@ -398,6 +438,7 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                 lab.review_event = review_event
                 lab.provider_session = sessions[i]
                 lab.next_player = next_order.index(i + 1) + 1
+                lab.restored_context = restored_context[i]
             publish(output / "demo.json", status)
             with ThreadPoolExecutor(max_workers=2) as pool:
                 pending = {pool.submit(run_agent, lab, provider, model, round_budget, min(reply_timeout, round_budget)): index
@@ -436,6 +477,7 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                         except Exception as error:
                             status["agents"][index].update(status="failed", error=str(error))
                     publish(output / "demo.json", status)
+            restored_context = [None, None]
             if review_event.is_set():
                 status.update(phase="awaiting_approval", games_requested=len(status["games"]),
                               elapsed_seconds=time.monotonic() - started)
@@ -487,6 +529,7 @@ if __name__ == "__main__":
     parser.add_argument("--games", type=int, default=None, choices=range(2, 10))
     parser.add_argument("--duration-seconds", type=float, help="Wall-clock training budget; defaults to 600 unless --games is supplied.")
     parser.add_argument("--resume-from", type=Path, help="Carry the same agents’ last played weights into this run.")
+    parser.add_argument("--continue-run", action="store_true", help="Continue a completed run in place, retaining policies, games, and saved agent context.")
     parser.add_argument("--player-1", default="codex:gpt-6-astra")
     parser.add_argument("--player-2", default="claude:claude-opus-5-5")
     parser.add_argument("--reply-timeout", type=float, default=120)
@@ -502,4 +545,4 @@ if __name__ == "__main__":
                               [args.player_1, args.player_2], args.reply_timeout, args.edit_seconds, args.swap_sides, args.paired_games,
                               args.duration_seconds if args.duration_seconds is not None else (None if args.games else 600),
                               args.resume_from, prepare_agents=True,
-                              zero_initial=args.zero_initial, wait_for_viewer=args.wait_for_viewer, wait_for_start=args.wait_for_start, single_reply=True, random_sides=args.random_sides)))
+                              zero_initial=args.zero_initial, wait_for_viewer=args.wait_for_viewer, wait_for_start=args.wait_for_start, single_reply=True, random_sides=args.random_sides, continue_run=args.continue_run)))

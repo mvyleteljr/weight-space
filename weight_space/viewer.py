@@ -162,7 +162,8 @@ def main():
                 pygame.draw.rect(stage, (70, 190, 230) if i == 0 else (215, 115, 230),
                                  (x, 52, 310 * fighter.health / 100, 20))
                 label(names[i].upper() if i < len(names) else f"PLAYER {i + 1}", x, 20, 32, surface=stage)
-                label(f"HP {fighter.health}", x, 78, 22, surface=stage)
+                damage = state["fighters"][i].get("damage_dealt")
+                label(f"HP {fighter.health}" + (f"   DMG {damage}" if damage is not None else ""), x, 78, 22, surface=stage)
             remaining = max(0, (state["max_steps"] - state["step"]) / 60)
             label(f"{remaining:04.1f}s", 450, 30, 32, surface=stage)
             screen.blit(stage, (0, 0))

@@ -68,6 +68,7 @@ class FighterState:
     attack_cooldown: int = 0
     hit: bool = False
     health: int = 100
+    damage_dealt: int = 0
     alive: bool = True
     action: int = 0
     frame_index: int = 0
@@ -309,6 +310,10 @@ class Arena:
                 fighter.attack_connected = True
                 if fighter.player == 2 and fighter.attack_type == 1:
                     impulses[1 - index] = -PUNCH_KNOCKBACK if fighter.flip else PUNCH_KNOCKBACK
+        # Credit actual HP removed, before any healing, without overkill points.
+        lost = [min(before, hit) for before, hit in zip(health_before, damage)]
+        for index, fighter in enumerate(self.fighters):
+            fighter.damage_dealt += lost[1 - index]
         for index, fighter in enumerate(self.fighters):
             fighter.health = max(0, fighter.health - damage[index])
             if impulses[index]:
@@ -337,9 +342,8 @@ class Arena:
         if knocked_out or self.steps >= self.max_steps:
             self.done = True
             self.reason = "knockout" if knocked_out else "time_limit"
-            a, b = [f.health for f in self.fighters]
+            a, b = [f.health if knocked_out else f.damage_dealt for f in self.fighters]
             self.winner = 1 if a > b else 2 if b > a else None
-        lost = [min(before, hit) for before, hit in zip(health_before, damage)]
         return {"observations": self.observations(), "rewards": [(lost[1] - lost[0]) / 100,
                 (lost[0] - lost[1]) / 100], "terminated": knocked_out,
                 "truncated": self.done and not knocked_out, "done": self.done,
@@ -348,11 +352,12 @@ class Arena:
 
 
 def specification():
-    return {"version": "street-fighter-v2", "fps": FPS, "width": WIDTH, "height": HEIGHT,
+    return {"version": "street-fighter-v3", "fps": FPS, "width": WIDTH, "height": HEIGHT,
             "default_max_steps": 3600, "observation_size": len(OBSERVATION_NAMES),
             "observation_names": list(OBSERVATION_NAMES), "output_size": len(ACTIONS),
             "output_rule": "argmax; first index wins a tie", "player_order": [1, 2],
             "rules": [
+                "A knockout wins immediately. At timeout, more cumulative damage dealt wins; equal damage is a draw. Count actual HP removed before healing, excluding overkill. Healing never reduces damage points.",
                 "Each character has one full-health cube at the opposite edge; only its owner collects it by body contact, even at full health. It does not respawn. Collection occurs after damage and cannot revive a knockout.",
                 "Solid body regions prevent walking through opponents. Vertical clearance allows jumping over them.",
                 "Grimes turns immediately; Shoggoth waits 12 ticks after a side change and does not turn during an attack.",
@@ -396,6 +401,6 @@ def learning_specification():
         "Learn attack effects and timing from recorded gameplay; tuning values and source are not provided.",
         "Inputs describe self, opponent, relative position, remaining time, and both cube availability flags.",
         "Actions use world left/right. Facing is automatic; observe its timing during gameplay.",
-        "More remaining health wins when the match step limit is reached.",
+        "A knockout wins immediately. At timeout, more cumulative damage dealt wins; equal damage is a draw. Healing does not erase damage points.",
     ]
     return public

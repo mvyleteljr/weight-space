@@ -13,6 +13,29 @@ from streaming.server import SpectatorHandler
 
 
 class RunControlTests(unittest.TestCase):
+    def test_completed_run_continues_without_reset_or_new_initialization(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = RunManager(folder)
+            directory = manager.directory
+            (directory/'demo.json').write_text(json.dumps({'phase':'complete','games':[{'number':1}]}))
+            manager.autoplay = object()
+            self.assertTrue(manager.can_start())
+            process = Mock(); process.poll.return_value = None
+            with patch('streaming.run_control.shutil.which',return_value='/bin/uv'), \
+                 patch('streaming.run_control.subprocess.Popen',return_value=process) as launch, \
+                 patch('streaming.run_control.threading.Thread.start'):
+                self.assertEqual(manager.start(), directory)
+                self.assertIsNone(manager.autoplay)
+                self.assertEqual(manager.status()['phase'],'editing')
+                self.assertFalse(manager.can_start())
+                with self.assertRaises(RunBusyError): manager.start()
+            command = launch.call_args.args[0]
+            self.assertIn('--continue-run', command)
+            self.assertIn('--wait-for-viewer', command)
+            self.assertNotIn('--zero-initial', command)
+            self.assertNotIn('--wait-for-start', command)
+            self.assertEqual(command[command.index('--output')+1],str(directory))
+
     def test_fresh_runs_fixed_command_and_busy_guard(self):
         with tempfile.TemporaryDirectory() as folder:
             manager = RunManager(folder)

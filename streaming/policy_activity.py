@@ -2,7 +2,7 @@
 from weight_space.network import forward
 
 
-def recorded_activity(models, rows, stride=2):
+def recorded_activity(models, rows, stride=1):
     memory = [None, None]
     samples = []
     for index, row in enumerate(rows):
@@ -14,7 +14,10 @@ def recorded_activity(models, rows, stride=2):
             if action != row['actions'][player]:
                 raise ValueError('Saved policy does not match the recorded action.')
             if index % stride == 0:
-                decisions.append({'values': [trace['inputs']] + [layer['outputs'] for layer in trace['layers']],
+                state = row.get('state')
+                dx = (state['fighters'][player]['x'] - row['observations'][player][0] * state['width']) if state else 0
+                decisions.append({'motion': 'right' if dx > 1e-7 else 'left' if dx < -1e-7 else 'still',
+                                  'values': [trace['inputs']] + [layer['outputs'] for layer in trace['layers']],
                                   'action': action})
         if decisions:
             samples.append(decisions)

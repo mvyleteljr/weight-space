@@ -329,7 +329,7 @@ def controls_screen():
         draw_text("L - Attack 2", small_font, RED, 500, 320)
 
         draw_text("Two players share one keyboard", small_font, YELLOW, 100, 410)
-        draw_text("60 seconds. Highest health wins at timeout.", small_font, WHITE, 100, 450)
+        draw_text("60 seconds. Most damage dealt wins at timeout.", small_font, WHITE, 100, 450)
 
         # Return button
         return_button = draw_button("RETURN TO MAIN MENU", menu_font, BLACK, GREEN, SCREEN_WIDTH // 2 - 220, 550, 500, 50)

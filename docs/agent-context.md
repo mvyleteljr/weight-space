@@ -1,7 +1,8 @@
 # Goal
 
 Design one neural policy that wins as BOTH Grimes and Shoggoth against the other
-agent. Win by defeating the opponent, or having more health when time expires.
+agent. Win by defeating the opponent, or dealing more total damage when time expires.
+Equal damage at timeout is a draw; healing does not erase damage points.
 You choose architecture and numerical weights before game 1 and between games;
 the network chooses actions at 60 Hz. There is no gradient-based trainer.
 

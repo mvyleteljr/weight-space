@@ -118,8 +118,11 @@ The shared engine uses fixed timing and simultaneous hit resolution instead.
 Hit recovery blocks new inputs. Attack type remains set until recovery ends.
 
 A knockout ends the game immediately. At the time limit, the fighter with more
-health wins. Equal health is a draw. Player 1 is always the warrior and player 2
-is the wizard. Swap model sides in a match series to account for character and
+cumulative damage dealt wins. Equal damage is a draw, regardless of remaining HP.
+Each fighter's `damage_dealt` counts actual HP removed before healing, capped at
+the opponent's pre-hit HP; healing never subtracts points. It resets each game.
+The HUD shows `DMG` beside HP. The 33 network inputs are unchanged.
+Player 1 is always Grimes and player 2 is Shoggoth. Swap model sides to account for character and
 starting-position differences.
 
 ## Saved feedback
@@ -130,7 +133,7 @@ Each match writes:
 - `manifest.json`: interface specification, model hashes, initial state, and status.
 - `steps.jsonl`: pre-step observations, chosen actions, next observations, rewards,
   and complete post-step states.
-- `result.json`: the winner, end reason, final health, and number of steps.
+- `result.json`: the winner, end reason, final health, damage dealt, and number of steps.
 
 Action traces can be replayed through `Arena.step`. These records supply feedback
 for the next weight-edit round. The `run` command still drives the XOR proxy;

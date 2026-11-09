@@ -155,10 +155,16 @@ class WeightLab:
             rows = self.rows[recording["start"]:recording["start"] + recording["count"]]
             side = recording["your_player"] - 1
             events, healing, counts = [], [], [0] * 18
+            previous_damage = [0, 0]
             for i, row in enumerate(rows):
                 counts[row["actions"][side]] += 1
                 before = [row["observations"][0][3] * 100, row["observations"][1][3] * 100]
                 loss = [round(before[j] - row["state"]["fighters"][j]["health"], 6) for j in range(2)]
+                fighters = row["state"]["fighters"]
+                if all("damage_dealt" in f for f in fighters):
+                    damage = [f["damage_dealt"] for f in fighters]
+                    loss = [damage[1-j] - previous_damage[1-j] for j in range(2)]
+                    previous_damage = damage
                 if any(v > 0 for v in loss):
                     events.append({"step": recording["start"] + i, "health_lost_self": max(0,loss[side]),
                                    "health_lost_opponent": max(0,loss[1-side])})
@@ -168,6 +174,9 @@ class WeightLab:
             summaries.append({"game": recording["game"], "your_player": side + 1,
                 "outcome": "draw" if result["winner"] is None else "win" if result["winner"] == side + 1 else "loss",
                 "final_health_self": result["health"][side], "final_health_opponent": result["health"][1-side],
+                "reason": result.get("reason"),
+                "damage_dealt_self": result.get("damage_dealt", [None, None])[side],
+                "damage_dealt_opponent": result.get("damage_dealt", [None, None])[1-side],
                 "action_counts": [{"id": i, "count": n} for i,n in enumerate(counts) if n],
                 "powerup_collections": healing, "contact_event_count": len(events), "contact_events": events[:6] + events[-6:] if len(events)>12 else events,
                 "events_truncated": len(events)>12,

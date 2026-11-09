@@ -55,6 +55,7 @@ def match(first, second, output, max_steps=3600):
                                         "actions": actions}, allow_nan=False) + "\n")
         summary = {"status": "complete", "steps": arena.steps, "winner": arena.winner,
                    "reason": arena.reason, "health": [f.health for f in arena.fighters],
+                   "damage_dealt": [f.damage_dealt for f in arena.fighters],
                    "models": manifest["models"]}
         (output / "result.json").write_text(encode(summary))
         manifest["status"] = "complete"

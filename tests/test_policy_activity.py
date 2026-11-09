@@ -36,3 +36,20 @@ class PolicyActivityTests(unittest.TestCase):
         rows[0]['actions'][0]=17
         with self.assertRaisesRegex(ValueError,'recorded action'):
             recorded_activity([model,model],rows)
+
+    def test_default_keeps_every_alternating_decision_and_reports_actual_motion(self):
+        model=design([{'width':18,'type':'dense','activation':'linear'}])
+        model['layers'][0]['weights'][1][28]=-1
+        model['layers'][0]['weights'][12][28]=1
+        rows=[]
+        for direction in (-1,1,-1,1):
+            observation=[0.5]+[0]*32
+            observation[28]=direction
+            rows.append({'observations':[observation,observation],
+                         'actions':[1 if direction<0 else 12]*2,
+                         'state':{'width':1000,'fighters':[{'x':490},{'x':500}]}})
+        result=recorded_activity([model,model],rows)
+        self.assertEqual([pair[0]['action'] for pair in result],[1,12,1,12])
+        # Requested direction and actual displacement are separate evidence.
+        self.assertEqual(result[1][0]['motion'],'left')
+        self.assertEqual(result[1][1]['motion'],'still')

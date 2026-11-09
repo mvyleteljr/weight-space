@@ -46,7 +46,7 @@ class ReplayStore:
                 from weight_space.network import load, architecture
                 from .policy_activity import recorded_activity
                 models = [load(folder/f'player-{player}.json') for player in (1,2)]
-                stride = max(1, manifest['game']['fps']//30)
+                stride = 1  # Keep each diagram decision aligned with its exact rendered game tick.
                 activity = recorded_activity(models, rows, stride)
                 from Street_Fighter.src.arena import ending_states
                 ending = ending_states(frames[-1]) if frames else []
@@ -176,6 +176,27 @@ class ReplayStore:
             histories.append({"agent": agent, "snapshots": snapshots, "context_requests": requests})
         return {"agents": histories}
 
+    def policy_model(self, agent_index, snapshot_id):
+        """Resolve a displayed snapshot, never a browser-supplied file path."""
+        if type(agent_index) is not int or agent_index not in (0, 1) or not isinstance(snapshot_id, str):
+            raise ValueError('Invalid policy selection.')
+        histories = self.policy_history()['agents']
+        if agent_index >= len(histories):
+            raise ValueError('Unknown agent.')
+        snapshot = next((s for s in histories[agent_index]['snapshots'] if s['id'] == snapshot_id), None)
+        if snapshot is None:
+            raise ValueError('Unknown policy revision.')
+        if snapshot['id'] == 'initial':
+            path = self.directory / f'initial-agent-{agent_index+1}.json'
+            if not path.exists():
+                path = self.directory / 'initial.json'
+        else:
+            after = snapshot['after_game']
+            folder = self.directory if after == 1 else self.directory / f'edit-{after}'
+            path = folder / f'lab-{agent_index+1}' / f'revision-{snapshot["revision"]}.json'
+        from weight_space.network import load
+        return load(path)
+
 
 class SpectatorHandler(BaseHTTPRequestHandler):
     def send_audio(self, path):
@@ -240,10 +261,21 @@ class SpectatorHandler(BaseHTTPRequestHandler):
                     return
                 if manager.directory and (self.server.replay_store is None or self.server.replay_store.directory != manager.directory):
                     self.server.replay_store = ReplayStore(manager.directory)
+                if path == "/api/autoplay/audio.wav":
+                    query = parse_qs(urlsplit(self.path).query)
+                    session = manager.autoplay
+                    if session is None or query.get('session', [''])[0] != session.id:
+                        self.send_error(409, 'Autoplay has stopped')
+                        return
+                    try:
+                        self.send_audio(session.store.audio(int(query.get('game', ['0'])[0])))
+                    except (ValueError, OSError, RuntimeError, subprocess.SubprocessError):
+                        self.send_error(404, 'Autoplay audio unavailable')
+                    return
                 if path == "/api/run":
                     from Street_Fighter.src.arena import Arena
                     self.send_json({"initial_state": Arena(max_steps=1800).state(), "run": manager.directory.name if manager.directory else None,
-                                    "demo": manager.status(), "can_start": manager.status().get("phase") == "ready" and manager.process is not None and manager.process.poll() is None, "run_token": manager.token})
+                                    "demo": manager.status(), "can_start": manager.can_start(), "run_token": manager.token})
                     return
             store = getattr(self.server, "replay_store", None)
             if store is None:
@@ -277,12 +309,17 @@ class SpectatorHandler(BaseHTTPRequestHandler):
                   "/assets/shoggoth-sprites-large.png": "shoggoth-sprites-large.png"}
         if path in assets:
             asset = self.server.assets_root / assets[path]
+            # Keep the public URL stable; prefer an optional animated background.
+            if path == "/assets/background.jpg":
+                animated = self.server.assets_root / "anthropic-church-animated-1000x600.apng"
+                if animated.is_file():
+                    asset = animated
             if not asset.is_file():
                 self.send_error(404)
                 return
             body = asset.read_bytes()
             self.send_response(200)
-            self.send_header("Content-Type", mimetypes.guess_type(asset.name)[0])
+            self.send_header("Content-Type", "image/png" if asset.suffix == ".apng" else mimetypes.guess_type(asset.name)[0])
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
@@ -322,7 +359,7 @@ class SpectatorHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         manager = getattr(self.server, "run_manager", None)
-        if self.path not in ("/api/runs", "/api/reset", "/api/game-finished", "/api/pause", "/api/resume") or manager is None:
+        if self.path not in ("/api/runs", "/api/reset", "/api/game-finished", "/api/pause", "/api/resume", "/api/autoplay", "/api/autoplay-next", "/api/autoplay-policies", "/api/autoplay-stop") or manager is None:
             self.send_error(403, "Run creation is not enabled")
             return
         from streaming.run_control import RunBusyError
@@ -338,6 +375,32 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             if not 0 < length <= 1024:
                 raise ValueError("Invalid request size.")
             body = json.loads(self.rfile.read(length))
+            if self.path == '/api/autoplay-stop':
+                if (not isinstance(body, dict) or set(body) != {'session'}
+                        or not isinstance(body['session'], str) or not 1 <= len(body['session']) <= 100):
+                    raise ValueError('Supply the autoplay session.')
+                manager.stop_autoplay(body['session'])
+                self.send_json({'ok': True})
+                return
+            if self.path == '/api/autoplay-policies':
+                if not isinstance(body, dict) or set(body) != {'session', 'after', 'policies'}:
+                    raise ValueError('Supply the autoplay session, previous game, and policy selections.')
+                if not isinstance(body['policies'], list) or len(body['policies']) != 2 or any(
+                    p is not None and (not isinstance(p, str) or len(p) > 100) for p in body['policies']
+                ):
+                    raise ValueError('Supply two policy selections.')
+                self.send_json(manager.autoplay_game(body['session'], body['after'], body['policies']))
+                return
+            if self.path == "/api/autoplay-next":
+                if not isinstance(body, dict) or set(body) != {'session', 'after'}:
+                    raise ValueError('Supply the autoplay session and previous game.')
+                self.send_json(manager.autoplay_game(body['session'], body['after']))
+                return
+            if self.path == "/api/autoplay":
+                if body != {}:
+                    raise ValueError('No options are required.')
+                self.send_json(manager.autoplay_game())
+                return
             if self.path == "/api/game-finished":
                 if not isinstance(body, dict) or set(body) != {"run", "game"}:
                     raise ValueError("Supply the run and game.")

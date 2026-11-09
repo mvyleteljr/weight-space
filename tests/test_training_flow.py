@@ -11,6 +11,43 @@ from weight_space.network import load
 
 
 class TrainingFlowTests(unittest.TestCase):
+    def test_continue_preserves_policies_games_scores_and_agent_context(self):
+        from weight_space.network import fingerprint
+        from weight_space.checkpoint import current_models
+        packet = {'note':'Remember my opening strategy.', 'calls':[
+            {'tool':'edit_weights','arguments':{'reason':'Explore','updates':[
+                {'layer':1,'row':4,'column':None,'value':2}]}},
+            {'tool':'submit','arguments':{'reason':'Use these weights'}}]}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'run'
+            with patch('weight_space.tool_loop.complete',return_value=(json.dumps(packet),{})):
+                first = run_tool_demo(root,max_steps=3,games=2,prepare_agents=True,
+                                      single_reply=True,persistent_sessions=False,zero_initial=True,random_sides=True)
+            original = {p: p.read_bytes() for p in root.rglob('*') if p.is_file() and p.name != 'demo.json'}
+            models = [fingerprint(load(p)) for p in current_models(root, first)]
+            prompts = []
+            def provider(provider, model, prompt, *args, **kwargs):
+                prompts.append(prompt)
+                return json.dumps({'note':'Keep learning.','calls':[
+                    {'tool':'submit','arguments':{'reason':'Keep current policy'}}]}), {}
+            with patch('weight_space.tool_loop.complete',side_effect=provider) as calls:
+                final = run_tool_demo(root,games=2,continue_run=True,single_reply=True,persistent_sessions=False)
+            self.assertEqual(calls.call_count,4)  # one update per agent per new game
+            self.assertEqual(final['phase'],'complete')
+            self.assertEqual(len(final['games']),4)
+            self.assertEqual(final['games'][:2],first['games'])
+            self.assertEqual(final['tally']['games'],4)
+            self.assertEqual([fingerprint(load(p)) for p in current_models(root,final)],models)
+            for p, data in original.items(): self.assertEqual(p.read_bytes(),data)
+            self.assertEqual(sum('saved conversation' in p for p in prompts),2)
+            self.assertTrue(all('Remember my opening strategy.' in p for p in prompts[:2]))
+            self.assertTrue(all('"completed_game":2' in p for p in prompts[:2]))
+            self.assertNotIn('saved conversation', (root/'edit-2/lab-1/turn-1.prompt.txt').read_text())
+            final['phase']='awaiting_approval'
+            (root/'demo.json').write_text(json.dumps(final))
+            with self.assertRaisesRegex(ValueError,'Only a completed'):
+                run_tool_demo(root,continue_run=True)
+
     def test_one_provider_query_per_agent_for_initialization_and_each_update(self):
         packet={'note':'Try an attack in the next game.', 'calls':[
             {'tool':'edit_weights','arguments':{'reason':'Explore','updates':[

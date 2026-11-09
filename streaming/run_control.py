@@ -26,6 +26,8 @@ class RunManager:
         self.lock = threading.Lock()
         self.placeholder = None
         self.token = secrets.token_urlsafe(32)
+        self.autoplay = None
+        self.continuing = False
         if initial is None:
             self._ready()
 
@@ -44,6 +46,7 @@ class RunManager:
 
     def reset(self):
         with self.lock:
+            self.autoplay = None
             # Reset discards the run; it never applies pending environment requests.
             if self.process is not None and self.process.poll() is None:
                 os.killpg(self.process.pid, signal.SIGTERM)
@@ -71,8 +74,29 @@ class RunManager:
             if paused:
                 marker.touch()
             else:
+                self.autoplay = None
                 marker.unlink(missing_ok=True)
             return self.directory
+
+    def autoplay_game(self, session=None, after=0, policies=None):
+        from streaming.autoplay import Autoplay
+        with self.lock:
+            status = self.status() or {}
+            if status.get('phase') != 'complete' and (not status.get('paused') or status.get('phase') not in ('playing', 'editing', 'rematch')):
+                raise RunBusyError('Pause training before starting autoplay.')
+            if session is None:
+                if policies is not None:
+                    raise RunBusyError('Start autoplay before selecting a policy.')
+                self.autoplay = Autoplay(self.directory, status)
+                return self.autoplay.next(0)
+            if self.autoplay is None or session != self.autoplay.id:
+                raise RunBusyError('Autoplay has stopped.')
+            return self.autoplay.next(after, policies)
+
+    def stop_autoplay(self, session):
+        with self.lock:
+            if self.autoplay is not None and self.autoplay.id == session:
+                self.autoplay = None
 
     def game_finished(self, run, number):
         with self.lock:
@@ -89,6 +113,11 @@ class RunManager:
         if self.directory:
             try:
                 status = json.loads((self.directory / "demo.json").read_text())
+                if self.continuing:
+                    if status.get('phase') != 'complete':
+                        self.continuing = False
+                    elif self.process is not None and self.process.poll() is None:
+                        status['phase'] = 'editing'
                 status["paused"] = (self.directory / "paused").exists()
                 return status
             except FileNotFoundError:
@@ -105,10 +134,38 @@ class RunManager:
 
     def start(self):
         with self.lock:
+            self.autoplay = None
+            status = self.status() or {}
+            if status.get('phase') == 'complete':
+                return self._continue(status)
             if (self.status() or {}).get("phase") != "ready" or self.process is None or self.process.poll() is not None:
                 raise RunBusyError("Initial policies are not ready.")
             (self.directory / "start").touch()
             return self.directory
+
+    def can_start(self):
+        status = self.status() or {}
+        if status.get('phase') == 'complete':
+            return bool(status.get('games')) and (self.process is None or self.process.poll() is not None)
+        return status.get('phase') == 'ready' and self.process is not None and self.process.poll() is None
+
+    def _continue(self, status):
+        if not self.can_start():
+            raise RunBusyError('The trainer is still finishing.')
+        uv = shutil.which('uv')
+        if uv is None:
+            raise ValueError('uv is unavailable on the host.')
+        command = [uv, 'run', '--project', str(self.repo), 'python', '-m', 'weight_space.tool_loop',
+                   '--output', str(self.directory), '--continue-run', '--duration-seconds', '600', '--wait-for-viewer']
+        logs = self.runs / '.launcher-logs'
+        logs.mkdir(exist_ok=True)
+        (self.directory / 'paused').unlink(missing_ok=True)
+        with (logs / f'{self.directory.name}.log').open('a') as log:
+            self.process = subprocess.Popen(command, cwd=self.repo, stdin=subprocess.DEVNULL,
+                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        self.continuing = True
+        threading.Thread(target=self._watch, args=(self.process, self.directory, status), daemon=True).start()
+        return self.directory
 
     def prepare(self, games=6):
         if type(games) is not int or not 2 <= games <= 9:
@@ -144,6 +201,8 @@ class RunManager:
     def _watch(self, process, directory, placeholder):
         code = process.wait()
         with self.lock:
+            if process is not self.process:
+                return
             path = directory / "demo.json"
             status = json.loads(path.read_text()) if path.exists() else dict(placeholder)
             if status.get("phase") not in ("complete", "failed", "stopped", "awaiting_approval"):

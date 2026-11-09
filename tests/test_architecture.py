@@ -265,6 +265,10 @@ class ArchitectureTests(unittest.TestCase):
 
     def test_observed_contact_event_indices_and_health_changes(self):
         lab = self.lab()
+        # Legacy recordings have health deltas but no cumulative damage counters.
+        for row in lab.rows:
+            for fighter in row['state']['fighters']:
+                fighter.pop('damage_dealt', None)
         lab.rows[0]['observations'][0][3] = 1
         lab.rows[0]['observations'][1][3] = 1
         lab.rows[0]['state']['fighters'][0]['health'] = 90
