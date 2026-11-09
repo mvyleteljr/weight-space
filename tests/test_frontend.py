@@ -48,6 +48,20 @@ class FrontendTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.replies(-1)
 
+    def test_knockout_playback_appends_death_without_changing_recorded_game(self):
+        path=self.root/'after/steps.jsonl'
+        rows=[json.loads(line) for line in path.read_text().splitlines()]
+        rows[-1]['state'].update(done=True,reason='knockout',winner=2)
+        rows[-1]['state']['fighters'][0].update(health=0,alive=False,action=6,frame_index=0,animation_tick=1)
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        saved=path.read_bytes()
+        replay=self.store.game(2)
+        self.assertGreaterEqual(len(replay['frames']),23)  # may also finish an in-flight jump
+        self.assertFalse(replay['frames'][2]['ending_complete'])
+        self.assertTrue(replay['frames'][-1]['ending_complete'])
+        self.assertEqual(replay['frames'][-1]['fighters'][0]['frame_index'],6)
+        self.assertEqual(path.read_bytes(),saved)
+
     def test_context_requests_visible_even_without_a_finished_reply(self):
         folder = self.root / 'edit-2/lab-1'; folder.mkdir(parents=True)
         save(folder / 'revision-0.json', initialize([33, 8, 18]))

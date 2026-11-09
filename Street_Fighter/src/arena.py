@@ -4,6 +4,7 @@ No graphics, audio, clock, keyboard, or model code is loaded here.
 """
 
 from dataclasses import asdict, dataclass
+import copy
 
 FPS = 60
 WIDTH, HEIGHT = 1000, 600
@@ -95,6 +96,36 @@ class FighterState:
                 self.attacking = False
                 self.attack_type = 0
                 self.hit = False
+
+
+def ending_states(state):
+    """Finish a knockout visually, without more policy decisions or combat steps."""
+    if not state.get("done") or state.get("reason") != "knockout":
+        return []
+    fighters = [FighterState(**data) for data in state["fighters"]]
+    remaining = max((ANIMATION_STEPS[f.player-1][6] * ANIMATION_TICKS
+                     - f.frame_index * ANIMATION_TICKS - f.animation_tick
+                     for f in fighters if not f.alive), default=0)
+    frames = []
+    floor = state["height"] - 110 - BODY_HEIGHT
+    # The final death frame holds while an airborne fighter lands.
+    for tick in range(max(remaining, FPS * 2)):
+        if tick >= remaining and all(f.y >= floor for f in fighters):
+            break
+        for fighter in fighters:
+            fighter.running = False
+            fighter.vel_y += GRAVITY
+            fighter.y = min(floor, fighter.y + fighter.vel_y)
+            if fighter.y >= floor:
+                fighter.vel_y, fighter.jump = 0, False
+            fighter.animate()
+        frame = copy.deepcopy(state)
+        frame.update(fighters=[asdict(f) for f in fighters], presentation_only=True,
+                     ending_complete=False)
+        frames.append(frame)
+    if frames:
+        frames[-1]["ending_complete"] = True
+    return frames
 
 
 # Solid contact regions in the original sprite-sheet cells (left, top, right,

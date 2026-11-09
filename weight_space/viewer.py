@@ -12,7 +12,7 @@ import time
 
 import pygame
 
-from Street_Fighter.src.arena import FighterState, ANIMATION_STEPS
+from Street_Fighter.src.arena import FighterState, ANIMATION_STEPS, ending_states
 from Street_Fighter.src.fighter import Fighter
 from Street_Fighter.src.streaming import FramePublisher, StreamConfig
 from .tool_loop import game_directory
@@ -81,6 +81,11 @@ def main():
             cache[name] = {"manifest": read_json(directory / "manifest.json"),
                            "result": read_json(directory / "result.json"),
                            "frames": [read_json_line(line) for line in (directory / "steps.jsonl").read_text().splitlines()]}
+            frames = cache[name]["frames"]
+            ending = ending_states(frames[-1]["state"]) if frames else []
+            if ending:
+                frames[-1]["state"]["ending_complete"] = False
+                frames.extend({"state": state} for state in ending)
         return cache.get(name)
 
     running = True
@@ -166,7 +171,7 @@ def main():
                 revision = (selected_game - 1) // 2 if status.get("paired_games", True) else selected_game - 1
                 title = f"GAME {selected_game} | Revision {revision} | " + ("Swapped characters" if selected_game % 2 == 0 else "First assignment")
             label(title, 24, 620, 32)
-            if state["done"]:
+            if state["done"] and state.get("ending_complete", True):
                 winner = state["winner"]
                 outcome = "DRAW" if winner is None else names[winner - 1].upper() + " WINS"
                 label(f"{outcome} | {state['reason'].replace('_', ' ')}", 24, 658, 26)

@@ -111,7 +111,7 @@ function draw() {
   });
   ctx.fillStyle = '#fff'; ctx.font = 'bold 28px Arial';
   ctx.fillText(`${Math.max(0, (state.max_steps - state.step) / (replay?.fps || 60)).toFixed(1)}s`, 455, 45);
-  if (state.done) {
+  if (state.done && state.ending_complete !== false) {
     ctx.textAlign = 'center';
     ctx.fillText(state.winner ? `${names()[state.winner - 1]} wins` : 'Draw', 500, 145);
     ctx.textAlign = 'left';

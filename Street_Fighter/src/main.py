@@ -12,12 +12,12 @@ from pathlib import Path
 
 if __package__:
     from .fighter import Fighter
-    from .arena import Arena, encode_action
+    from .arena import Arena, encode_action, ending_states
     from .streaming import FramePublisher, StreamConfig
     from .scripted_demo import scripted_actions
 else:
     from fighter import Fighter
-    from arena import Arena, encode_action
+    from arena import Arena, encode_action, ending_states
     from streaming import FramePublisher, StreamConfig
     from scripted_demo import scripted_actions
 
@@ -397,6 +397,7 @@ def game_loop():
     global score
     reset_game()
     round_over = False
+    ending = iter(())
     winner_img = None
     game_started = True
 
@@ -432,13 +433,18 @@ def game_loop():
                 (fighter_1 if player == 1 else fighter_2).attack_sound.play()
             if result["done"]:
                 round_over = True
+                ending = iter(ending_states(result["state"]))
                 if result["winner"] is not None:
                     score[result["winner"] - 1] += 1
                 winner_img = (warrior_victory_img if result["winner"] == 1 else
                               wizard_victory_img if result["winner"] == 2 else None)
         else:
-            victory_screen(winner_img)
-            return
+            state = next(ending, None)
+            if state is None:
+                victory_screen(winner_img)
+                return
+            for fighter, data in zip(arena.fighters, state["fighters"]):
+                vars(fighter).update(data)
 
         for cube in arena.state().get("powerups", []):
             if cube["available"]:

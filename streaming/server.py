@@ -39,6 +39,11 @@ class ReplayStore:
                 folder = self.directory / name
                 manifest = json.loads((folder / "manifest.json").read_text())
                 frames = [json.loads(line)["state"] for line in (folder / "steps.jsonl").read_text().splitlines()]
+                from Street_Fighter.src.arena import ending_states
+                ending = ending_states(frames[-1]) if frames else []
+                if ending:
+                    frames[-1]["ending_complete"] = False
+                    frames.extend(ending)
                 self.cache[number] = {"number": number, "player_agents": entry.get("player_agents", [1, 2]),
                                       "fps": manifest["game"]["fps"], "initial_state": manifest["initial_state"],
                                       "frames": frames, "result": entry["result"]}
