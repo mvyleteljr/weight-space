@@ -283,22 +283,58 @@ class LabTests(unittest.TestCase):
         self.assertEqual(second['result']['models'][0]['sha256'], third['result']['models'][1]['sha256'])
         self.assertNotEqual(second['result']['models'][1]['sha256'], third['result']['models'][0]['sha256'])
 
-    def test_single_reply_edits_tests_and_submits_in_one_provider_call(self):
+    def test_single_reply_edits_and_submits_without_synthetic_tests(self):
         from weight_space.tool_loop import single_reply_context
         self.lab.single_reply = True
         packet = {'note':'Try moving right.', 'calls':[
             {'tool':'edit_weights','arguments':{'reason':'Explore','updates':[
                 {'layer':1,'row':1,'column':None,'value':2}]}},
-            {'tool':'test_inputs','arguments':{'cases':[{'inputs':[0]*33}]}},
             {'tool':'submit','arguments':{'reason':'Test in the next match'}}]}
         with patch('weight_space.tool_loop.complete',return_value=(json.dumps(packet),{})) as provider:
             result=run_agent(self.lab,'codex','test')
         self.assertEqual(provider.call_count,1)
         self.assertEqual(result['revision'],1)
+        self.assertEqual(result['test_cases'],0)
         context=single_reply_context(self.lab)
         self.assertEqual(context['current_policy'],self.lab.initial)
         self.assertTrue(context['sampled_steps'])
         self.assertIn('One-reply input bundle',provider.call_args.args[2])
+        self.assertNotIn('test_inputs',provider.call_args.args[2])
+        self.assertNotIn('test_sequence',provider.call_args.args[2])
+        schema=provider.call_args.kwargs['output_schema']
+        available={call['properties']['tool']['enum'][0] for call in schema['properties']['calls']['items']['anyOf']}
+        self.assertEqual(available, {'set_action_feedback','set_architecture','edit_recurrent','edit_weights','request_context','submit'})
+
+    def test_single_reply_can_keep_current_policy(self):
+        self.lab.single_reply=True
+        result=self.lab.dispatch('submit',{'reason':'Keep the policy for another match.'})
+        self.assertNotIn('error',result)
+        self.assertEqual(result['revision'],0)
+        self.assertEqual(result['test_cases'],0)
+        self.assertEqual(result['before_sha256'],result['after_sha256'])
+
+    def test_single_reply_initializes_recurrence_and_action_feedback_without_tests(self):
+        lab=WeightLab(self.root/'initial.json',None,self.root/'initial-lab',1,game_number=0)
+        lab.single_reply=True
+        packet={'note':'Try memory.', 'calls':[
+            {'tool':'set_architecture','arguments':{'reason':'Remember observations','layers':[
+                {'width':3,'type':'recurrent','activation':'tanh'},
+                {'width':18,'type':'dense','activation':'linear'}]}},
+            {'tool':'set_action_feedback','arguments':{'reason':'Remember actions','enabled':True}},
+            {'tool':'edit_recurrent','arguments':{'reason':'Retain state','updates':[
+                {'layer':0,'row':0,'column':0,'value':0.5}]}},
+            {'tool':'submit','arguments':{'reason':'Evaluate in game 1'}}]}
+        with patch('weight_space.tool_loop.complete',return_value=(json.dumps(packet),{})) as provider:
+            result=run_agent(lab,'claude','test')
+        self.assertEqual(provider.call_count,1)
+        self.assertEqual(result['test_cases'],0)
+        self.assertTrue(lab.model['action_feedback'])
+        self.assertEqual(lab.model['layers'][0]['recurrent'][0][0],0.5)
+
+    def test_single_reply_rejects_read_and_synthetic_test_calls(self):
+        self.lab.single_reply=True
+        for name in ('info','read_steps','read_weights','inspect_step','test_inputs','test_sequence'):
+            self.assertIn('next game evaluates',self.lab.dispatch(name,{})['error'])
 
     def test_single_reply_never_retries_or_adopts_invalid_edits(self):
         from weight_space.tool_loop import SingleReplyError

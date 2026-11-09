@@ -128,10 +128,10 @@ weights, switches characters each game, and lets both agents edit after each gam
 except the final game. The tally counts agent wins and shows draws separately.
 **Restart** only restarts playback of the selected game.
 
-The input-test loop lets Astra and Opus 5.5 inspect recorded actions, read layer
-activations, edit explicit weight values, and test chosen inputs before submission.
-Both start with the same random 33–8–18 network. Each agent has its own candidate.
-Tests run a network forward pass. They do not use an opponent or advance the game.
+Astra and Opus 5.5 receive match results, sampled gameplay evidence, and their
+current weights. Each returns one policy proposal; the next game evaluates it.
+There are no synthetic test calls or extra model queries within an update.
+Both begin with the same 33–8–18 network. Each agent has its own candidate.
 
 ```sh
 uv run python -m weight_space.tool_loop --output runs/astra-fable-tools-02 --seed 42
@@ -163,17 +163,16 @@ for `read_steps` and `inspect_step`. Inputs always describe the agent's own figh
 first, including when it controls player 2.
 Each edit round has its own time and tool limits. Records for later edit rounds
 are in `edit-2`, `edit-3`, and so on. Later games are in `game-3`, `game-4`, and so on.
-If a CLI reply times out, the agent gets one retry per edit round within the same
-time budget. If it times out again, or the edit time expires, the next game uses
-that agent's weights from the last game. Unsubmitted edits are discarded. The
-reply card marks the skipped edit as `kept_previous`. Other errors still stop the
-run. A timeout message shows the time limit, without the full CLI command.
+A timeout or invalid proposal keeps that agent's last submitted policy without
+retrying the model. Unsubmitted edits are discarded and the reply card reports
+`kept_previous`. Initialization failure prevents the first game from starting.
+A timeout message shows the time limit without the full CLI command.
 
 Choose each provider and model with `--player-1 provider:model` and
 `--player-2 provider:model`. Providers are `codex`, `claude`, and `tinfoil`.
 Use `--reply-timeout 25 --edit-seconds 60` to set time limits in seconds.
-Load `.env` when using Tinfoil. A timeout stops the run; it does not silently
-replace an agent or reuse an untested revision.
+Load `.env` when using Tinfoil. Failed updates never replace the active policy
+with an unsubmitted revision.
 
 Compare complete edit loops before choosing models:
 
@@ -193,23 +192,23 @@ Codex receives `--output-schema`; Claude receives `--json-schema`. The schema
 allows only the trusted data tools and their argument fields. Claude replies are
 read from `structured_output`. Host validation still checks types, bounds, and
 state before applying edits. A valid JSON shape does not prove a good strategy.
-The agents can read a sequence of saved steps, inspect a step's input, activations,
-scores and action, read a neuron, set numeric weights, test up to eight inputs per
-call, and submit. Tests can include an expected action. A mismatch is feedback;
-it does not prevent submission. Each final revision must have an input test.
+The game requests one reply per agent at initialization and after each completed
+game that has a following game. Current weights and sampled match evidence are
+included upfront. The reply contains up to eight ordered architecture/weight edits
+and a final `submit`, or an environment-change request. Keeping the current policy
+is allowed. Read and synthetic-test tools are excluded from this live protocol;
+the next game evaluates the proposal. No retries or follow-up queries occur within
+an update. Astra uses medium reasoning effort; Opus 5.5 uses high. Each reply has a
+120-second limit. The host validates network dimensions, bounds, and finite values;
+invalid proposals never become the next game's policy.
 
-The game requests one reply per update, with up to eight ordered edit/test/submit calls.
-Current weights and sampled match evidence are included upfront; no retries or
-follow-up calls are made within that update. Astra uses medium reasoning effort; Opus 5.5 uses high. Each reply has a 120-second limit. Each agent has
-a four-minute round budget, one reply, up to eight tool calls, and eight cases per test call.
-These limits bound the loop; they do not guarantee fast service responses.
-Invalid tool calls return errors without applying partial weight edits.
+The standalone interactive lab still supports forward-pass tests for development.
+Those tests are separate from live training and do not simulate a match.
 
 Each `lab-1` or `lab-2` directory contains prompts, replies, provider metadata,
-weight revisions, and `tools.jsonl`. The tool log contains arguments and results,
-including full layer activations for each input test. A final match starts only
-after both agents submit. No agent code runs, and no training or automatic weight
-search occurs. Input tests check action selection; the final match checks play.
+weight revisions, and `tools.jsonl`. The tool log contains arguments and results.
+A match uses the agents' submitted policies. No agent code runs, and no automatic
+weight search occurs. Gameplay provides the evidence for the following update.
 
 ### Web viewing for spectators
 
@@ -349,16 +348,16 @@ parameters. These are data-only networks, not agent-supplied executable code.
 sets ordinary weights/biases and `edit_recurrent` sets state-to-state weights.
 Recurrent layers compute `activation(W x + R h_previous + bias)`. Each policy has
 private memory that resets at the beginning of every match, including character
-swaps. `test_sequence` checks consecutive ticks; a recurrent submission must
-pass through a test sequence of at least two ticks for its latest revision.
-`inspect_step` reconstructs recurrent state from the recorded game prefix.
+swaps. Recurrent policies can be submitted directly, just like MLPs; the next
+game evaluates their behavior.
 Only submitted candidates become the next game's policy; timeouts retain the
 previous policy. Damage/recovery tuning remains hidden from agent instructions.
 
 The spectator page shows compact win totals and gameplay at the top, with
 two policy panels below the game. Replays load paused. SVG diagrams show layers, widths, activations, and recurrent loops;
 parameter counts and a policy fingerprint identify weight-only revisions too.
-Each panel has its own previous/next arrows and **Live** toggle. Updates pair
+Each panel has its own previous/next arrows. Reaching the newest update resumes
+automatic following; browsing older updates leaves that panel there. Updates pair
 public reply notes and tool outcomes with the policy revision at that point,
 and distinguish candidates from submitted or discarded policies. Full matrices
 remain in each run's `lab-*/revision-*.json` artifacts.
@@ -367,8 +366,7 @@ remain in each run's `lab-*/revision-*.json` artifacts.
 
 Each editing prompt explains indexed inputs and normalization, animation IDs,
 character identity versus player slots, pre-action observations versus post-action
-results, recurrent resets, and the distinction between forward-pass tests and
-actual matches. The summary includes agent-relative outcomes, action counts, and
+results, recurrent resets, and how the next match evaluates the policy proposal. The summary includes agent-relative outcomes, action counts, and
 up to 12 observed health-change events with `read_steps` indices. Damage/recovery
 configuration stays hidden; gameplay evidence remains accessible.
 
@@ -383,11 +381,11 @@ explicit approval before changing the environment. No change is applied automati
 The saved request does not itself send a chat notification; the assistant must
 monitor the run or inspect it on the next interaction.
 
-Network diagrams show every neuron as a small dot. Hover, tap, or focus a neuron
-to reveal its incoming and outgoing weights. Lines are grayscale: brightness
+Network diagrams show every neuron as a small dot. Select a neuron with a click
+or Enter/Space to reveal its incoming and outgoing weights. Lines are grayscale: brightness
 scales with absolute weight divided by the largest absolute weight in the whole
 destination layer. Hover a line for its exact signed value; zero weights are dark.
-Purple loops denote recurrent state; they are schematic, not individual recurrent weights.
+Gray loops denote recurrent state; they are schematic, not individual recurrent weights.
 These diagrams show weights, not live activations. Wide networks scroll horizontally; history still browses independently.
 
 Previous-action feedback is optional: agents call `set_action_feedback` with
@@ -395,9 +393,8 @@ Previous-action feedback is optional: agents call `set_action_feedback` with
 or -1 at the start of each game. It records the command selected even when combat
 rules prevent it from executing. Existing weights are preserved; the new column
 starts at zero. Agents can edit that column or disable feedback. This works with
-MLPs and recurrent layers. `test_sequence` carries predicted actions between ticks;
-independent `test_inputs` cases reset feedback. Both accept the usual 33 environment
-values. Stateful policies must pass a sequence test before submission.
+MLPs and recurrent layers. Stateful policies need no synthetic test before
+submission; the next game evaluates them.
 
 The web controller has **Play/Pause**, **Speed**, and **Reset**. Launching the
 server or pressing Reset starts a fresh session: identical zeroed 33–8–18 policies,
@@ -422,7 +419,7 @@ randomly initialized unless `--zero-initial` is supplied. `--wait-for-start` and
 
 Fresh runs launched from the UI/CLI give both agents an initialization phase before
 game 1. They receive no recordings or prior results and can edit weights, change
-architecture, enable memory, or keep the initial policy after testing it. This
+architecture, enable memory, or keep the initial policy. This
 phase uses the same bounded tools and request/approval gate as later updates.
 Setup consumes the run's wall-clock budget. A timeout keeps the initial policy;
 a failed update or environment-change request prevents gameplay from starting.

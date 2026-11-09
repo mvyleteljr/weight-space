@@ -11,10 +11,12 @@ import threading
 
 from .demo import PAIRINGS, publish
 from .game import match
-from .lab import WeightLab, TOOLS
+from .lab import WeightLab, TOOLS, SINGLE_REPLY_TOOLS
 from .network import encode, fingerprint, initialize, load, save
 from .providers import complete, ProviderSession
-from .tool_schema import TOOL_REPLY_SCHEMA
+from .tool_schema import TOOL_REPLY_SCHEMA, reply_schema
+
+SINGLE_REPLY_SCHEMA = reply_schema(SINGLE_REPLY_TOOLS)
 
 
 def parse_calls(text):
@@ -96,7 +98,7 @@ def prompt_for(lab, history, turn):
                       if lab.game_number == 0 else
                       f"Review game {lab.game_number} to prepare for game {lab.game_number + 1}. "
                       "Weights carry forward within this run. The before-game-1 instructions no longer apply."),
-        "TOOLS": json.dumps(TOOLS, separators=(',', ':')),
+        "TOOLS": json.dumps(SINGLE_REPLY_TOOLS if getattr(lab, "single_reply", False) else TOOLS, separators=(',', ':')),
         "CURRENT_SUMMARY": json.dumps(prompt_summary(lab.info({}), include_interface=True), separators=(',', ':')),
         "ROUND_START_WEIGHTS": json.dumps(lab.initial if lab.game_number > 1 else None, separators=(',', ':')),
         "TOOL_HISTORY": json.dumps(history, separators=(',', ':'), allow_nan=False),
@@ -136,7 +138,7 @@ def session_prompt(lab, history, turn, session):
         instructions = "REVISED INSTRUCTIONS (replace previous instructions):\n" + re.sub(
             r"\{\{([A-Z_]+)\}\}", "[provided in the current update]", context) + "\n"
     notice = ("New round: use the active policy identified below; discard unsubmitted edits. "
-              "Edit/test counters reset. Use the supplied current policy.\n" if new_round else "")
+              "Edit counters reset. Propose a policy for the next game using the supplied evidence.\n" if new_round else "")
     return (instructions + notice + "UPDATE ONLY. Continue in the same JSON tool protocol.\n" +
             json.dumps(payload, separators=(',', ':'), allow_nan=False), context, "update")
 
@@ -191,7 +193,7 @@ def run_agent(lab, provider, model_id, max_seconds=240, reply_timeout=120):
             try:
                 text, metadata = complete(provider, model_id, attempt_prompt, min(reply_timeout, remaining),
                                           16000 if single else 4000, quick=True, reasoning_effort="high" if model_id == "claude-opus-5-5" else "medium",
-                                          output_schema=TOOL_REPLY_SCHEMA if provider in ("codex", "claude") else None,
+                                          output_schema=(SINGLE_REPLY_SCHEMA if single else TOOL_REPLY_SCHEMA) if provider in ("codex", "claude") else None,
                                           **({"session": session} if session is not None else {}))
                 if session is not None:
                     session.context_text, session.round, session.history_sent = sent_context, lab.game_number, len(history)

@@ -32,9 +32,13 @@ ARGUMENTS = {
     "test_inputs": obj({"cases": {"type": "array", "items": CASE, "minItems": 1, "maxItems": 8}}),
     "submit": obj({"reason": REASON}),
 }
-TOOL_REPLY_SCHEMA = obj({
-    "note": {"type": "string", "maxLength": 300},
-    "calls": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
-        "anyOf": [obj({"tool": {"type": "string", "enum": [name]}, "arguments": arguments})
-                  for name, arguments in ARGUMENTS.items()]}},
-})
+def reply_schema(tools=None):
+    return obj({
+        "note": {"type": "string", "maxLength": 300},
+        "calls": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
+            "anyOf": [obj({"tool": {"type": "string", "enum": [name]}, "arguments": arguments})
+                      for name, arguments in ARGUMENTS.items() if tools is None or name in tools]}},
+    })
+
+
+TOOL_REPLY_SCHEMA = reply_schema()

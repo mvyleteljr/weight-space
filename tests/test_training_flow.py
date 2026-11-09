@@ -11,6 +11,25 @@ from weight_space.network import load
 
 
 class TrainingFlowTests(unittest.TestCase):
+    def test_one_provider_query_per_agent_for_initialization_and_each_update(self):
+        packet={'note':'Try an attack in the next game.', 'calls':[
+            {'tool':'edit_weights','arguments':{'reason':'Explore','updates':[
+                {'layer':1,'row':4,'column':None,'value':2}]}},
+            {'tool':'submit','arguments':{'reason':'Evaluate in the next game'}}]}
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'run'
+            with patch('weight_space.tool_loop.complete',return_value=(json.dumps(packet),{})) as provider:
+                status=run_tool_demo(root,max_steps=3,games=3,prepare_agents=True,
+                                     single_reply=True,persistent_sessions=False,zero_initial=True)
+            self.assertEqual(status['phase'],'complete')
+            self.assertEqual(len(status['games']),3)
+            self.assertEqual(provider.call_count,6)  # 2 initial proposals + 2 after each of games 1 and 2
+            submissions=list(root.glob('**/submission.json'))
+            self.assertEqual(len(submissions),6)
+            for path in submissions:
+                self.assertEqual(json.loads(path.read_text())['test_cases'],0)
+                self.assertEqual(len(list(path.parent.glob('turn-*.reply.txt'))),1)
+
     def test_zero_initialize_start_then_show_every_game_before_updates(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / 'run'

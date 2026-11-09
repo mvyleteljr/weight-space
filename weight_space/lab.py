@@ -29,6 +29,14 @@ TOOLS = {
     "submit": "{reason:string} -> lock current revision; requires testing the latest revision; edits optional before game 1; stateful policies need >=2 sequence ticks",
 }
 
+# Live training receives all evidence upfront and returns one complete proposal.
+# Read/forward-pass tools remain available to the separate interactive lab only.
+SINGLE_REPLY_TOOLS = {name: TOOLS[name] for name in (
+    "set_action_feedback", "set_architecture", "edit_recurrent", "edit_weights",
+    "request_context", "submit")}
+SINGLE_REPLY_TOOLS["set_action_feedback"] = TOOLS["set_action_feedback"].replace("; test_sequence required", "")
+SINGLE_REPLY_TOOLS["submit"] = "{reason:string} -> use the current policy in the next game; edits are optional; no synthetic test required"
+
 
 def integer(value, low, high, name):
     if type(value) is not int or not low <= value <= high:
@@ -83,6 +91,8 @@ class WeightLab:
         try:
             if name not in TOOLS:
                 raise ValueError("Unknown tool. No code or file tools are available.")
+            if getattr(self, "single_reply", False) and name not in SINGLE_REPLY_TOOLS:
+                raise ValueError("Use the supplied evidence and submit one policy proposal; the next game evaluates it.")
             # Dispatch only trusted methods from a fixed table, never agent-supplied names.
             methods = {"info": self.info, "read_steps": self.read_steps,
                        "inspect_step": self.inspect_step, "read_weights": self.read_weights,
@@ -327,10 +337,11 @@ class WeightLab:
     def submit(self, args):
         keys(args, ["reason"], ["reason"])
         self.reason(args["reason"])
-        if (self.revision == 0 and self.game_number != 0) or self.tested_revision != self.revision:
-            raise ValueError("Edit weights, then test the current revision before submitting.")
-        if (self.model.get("action_feedback") or any("recurrent" in layer for layer in self.model["layers"])) and self.sequence_tested_revision != self.revision:
-            raise ValueError("Test the current stateful revision with test_sequence using at least two ticks.")
+        if not getattr(self, "single_reply", False):
+            if (self.revision == 0 and self.game_number != 0) or self.tested_revision != self.revision:
+                raise ValueError("Edit weights, then test the current revision before submitting.")
+            if (self.model.get("action_feedback") or any("recurrent" in layer for layer in self.model["layers"])) and self.sequence_tested_revision != self.revision:
+                raise ValueError("Test the current stateful revision with test_sequence using at least two ticks.")
         result = {"reason": args["reason"], "revision": self.revision,
                   "context_requests": self.context_requests,
                   "tool_calls": self.calls, "test_cases": self.test_cases,

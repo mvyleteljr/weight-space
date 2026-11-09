@@ -5,8 +5,8 @@ agent. Win by defeating the opponent, or having more health when time expires.
 You choose architecture and numerical weights before game 1 and between games;
 the network chooses actions at 60 Hz. There is no gradient-based trainer.
 
-Learn from match evidence: identify a weakness, make a targeted change, test action
-selection, then evaluate the next match. Early exploration of movement, jumping,
+Learn from match evidence: identify a weakness, propose a targeted change, then
+evaluate it in the next match. Early exploration of movement, jumping,
 and both attacks can produce useful evidence. Larger networks are not inherently
 better. Damage, reach, and recovery mechanics must be learned through gameplay;
 no tuning tables, hitboxes, source code, or screenshots are supplied.
@@ -17,10 +17,10 @@ no tuning tables, hitboxes, source code, or screenshots are supplied.
 One response per update, including initialization.
 
 Before game 1, both agents start from identical fresh 33→8→18 MLPs (zeroed in the web app). Check the supplied weight values. You may
-initialize weights, redesign the network, or keep it unchanged after testing.
-There are no recordings yet; use synthetic inputs, not read_steps or inspect_step.
-After games, review the available recordings, edit, test the latest revision, and
-submit. Consider both characters, even when the next match uses only one.
+initialize weights, redesign the network, or keep it unchanged. There are no
+recordings yet. After each game, review the supplied results and context, then
+submit your policy for the next game. Consider both characters, even when the next
+match uses only one. The next game is the test of your proposal.
 
 # Responses and limits
 
@@ -29,22 +29,19 @@ output; a shorter remaining budget takes precedence. There is no second reply or
 retry in this update. Current weights and sampled gameplay evidence are supplied.
 
 Return JSON only, with a concise public note and 1–8 sequential tool calls:
-Return {"note":"What I am testing and why.","calls":[...]} with edits first,
-then test_inputs or test_sequence, then submit as the final call. Architecture,
+Return {"note":"What I changed or kept, and why.","calls":[...]} with any edits first,
+then submit as the final call. Architecture,
 feedback and recurrent-weight changes can be included in the same batch.
 
-Follow the supplied schema, including required fields. Use null for an unspecified
-expected_action and false for zero_all unless intentionally clearing weights.
+Follow the supplied schema, including required fields. Use column:null to edit a bias
+and zero_all:false unless intentionally clearing weights.
 Only the listed host tools are available: no shell, file/web tools, executable
-code, optimizers, gradients, or automated parameter search. Do not spend the reply on read tools: you cannot see their results until the next
-update. Invalid proposals retain the previous policy; initialization must succeed
-before the game can start. Limits per round: 40 tool calls, 12 edits, 64 test
-cases; at most 8 cases per test call and 418 values per weight-edit call.
-
-Test distinct situations for both characters. A forward-pass test checks action
-selection, not combat effectiveness: it does not simulate the opponent or a match.
-Submit only after testing the latest revision. A policy with recurrence or action
-feedback requires a test_sequence of at least two ticks. Stop after submit.
+code, optimizers, gradients, or automated parameter search. There are no read/test
+round trips or synthetic test calls. The host validates dimensions and numerical
+values; gameplay evaluates strategy. You may submit an unchanged policy.
+Invalid proposals retain the previous policy; initialization must succeed before
+the game can start. At most 8 calls per reply and 418 values per weight-edit call.
+Stop after submit.
 
 # Network choices
 
@@ -54,8 +51,8 @@ relu, or tanh activation: 1–8 layers, width 1–64, at most 20,000 parameters.
 
 set_architecture replaces all weights with zeros. edit_weights preserves untouched
 values unless zero_all is true; that clears ordinary weights, biases, and recurrent
-weights. Indices are zero-based; column:null edits a bias. read_weights retrieves
-a neuron's current weights. The summary identifies the current policy.
+weights. Indices are zero-based; column:null edits a bias. The input bundle contains
+your current weights and the summary identifies the current policy.
 
 Recurrence is optional: each recurrent layer computes
 activation(W × input + R × previous_layer_output + bias), where previous_layer_output
@@ -67,10 +64,6 @@ or -1 on the first tick. Existing weights are preserved; the new column starts a
 zero. Edit column 33 to use it. This remembers your command, even if the game could
 not execute it. It resets each game, works with or without recurrence, can be
 disabled, and remains enabled across architecture changes until disabled.
-
-Both test tools take 33 environment values. test_inputs resets memory and action
-feedback for every case; test_sequence carries them between cases, feeding back
-the candidate's predicted action automatically.
 
 # Reading the game
 
@@ -102,11 +95,6 @@ Samples may have gaps; do not treat them as a continuous trajectory. Each row ha
 recorded actions, and a POST-action state. Step arguments use the combined recording
 index, not the state's tick counter; each recording includes its index range and
 player slot. No observed hits does not prove an attack cannot work.
-
-inspect_step evaluates your candidate on recorded observations; original:true uses
-the round-start policy. For stateful policies it replays that policy's prefix to
-reconstruct memory and previous actions. These are counterfactual forward passes
-on fixed observations, not a new match or the recorded policy's original behavior.
 
 # Continuity and feedback
 
