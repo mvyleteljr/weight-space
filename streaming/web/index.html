@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Weight Space</title>
-  <link rel="stylesheet" href="/style.css"><script src="/status.js" defer></script><script src="/network.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/status.js" defer></script><script src="/network.js" defer></script><script src="/audio.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body>
   <main>
@@ -13,6 +13,7 @@
       <div class="controls" id="controls">
         <div class="control-row">
           <button id="start" disabled>Initializing…</button>
+          <button id="mute" aria-pressed="false">Mute</button>
           <label>Speed <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
           <button id="reset">Reset</button>
           <span id="status" role="status">Initializing…</span>

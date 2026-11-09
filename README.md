@@ -396,7 +396,21 @@ starts at zero. Agents can edit that column or disable feedback. This works with
 MLPs and recurrent layers. Stateful policies need no synthetic test before
 submission; the next game evaluates them.
 
-The web controller has **Play/Pause**, **Speed**, and **Reset**. Launching the
+Knockouts play all seven death frames before showing the result and releasing the
+next agent update. These ending frames are presentation only: they cannot change
+health, rewards, or the winner, and are not added to the agents' game evidence.
+
+The training page plays recorded Python game frames. Its synchronized audio track
+uses the original music, sword, and magic assets at their original game volumes;
+attack sounds follow recorded attack starts. The Python server renders one WAV per
+match using FFmpeg, caches it in the run, and serves it over HTTP. Install FFmpeg
+on the host to enable audio. **Mute/Unmute** sits beside Play. Audio plays only at
+1× and stops on pause, reset, between games, and in a hidden tab. The mute control
+is disabled at other speeds; returning to 1× rejoins the displayed game time.
+This audio path is for the training page; the separate legacy RTSP broadcaster
+still publishes video only.
+
+The web controller has **Play/Pause**, **Mute**, **Speed**, and **Reset**. Launching the
 server or pressing Reset starts a fresh session: identical zeroed 33–8–18 policies,
 zero scores, no old games or agent context. Both agents receive their initial
 context and can initialize weights or redesign their network. **Initializing…**

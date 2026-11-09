@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 const canvas = $('arena'), ctx = canvas.getContext('2d');
+const gameAudio = new GameAudio();
 let idleState = null, demo = null, replay = null, selected = 1, frame = 0, playing = false, speed = 1;
 let requestId = 0, lastTime = 0, endWait = 0, assets = null, replyKey = '', polling = false;
 let policyData = null;
@@ -7,6 +8,7 @@ const historySelection = [null, null];
 let activeRun = null, runToken = null, launching = false, canStart = false, generation = 0;
 let acknowledged = 0, acknowledging = false, ackRetryAt = 0;
 function resetRun(name) {
+  gameAudio.reset();
   activeRun = name; ++requestId; replay = null; selected = 1;
   frame = 0; endWait = 0; playing = false; replyKey = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -48,6 +50,10 @@ function syncControls() {
   $('start').textContent = initializing ? 'Initializing…' : active && !demo?.paused ? 'Pause' : 'Play';
   $('start').disabled = launching || (!active && !(phase === 'ready' && canStart));
   $('reset').disabled = launching || !runToken;
+  $('mute').textContent = gameAudio.muted ? 'Unmute' : 'Mute';
+  $('mute').setAttribute('aria-pressed', String(gameAudio.muted));
+  $('mute').disabled = speed !== 1 || !!gameAudio.error;
+  $('mute').title = speed !== 1 ? 'Audio is available at 1× speed' : gameAudio.error;
 }
 async function post(path, body = {}) {
   const response = await fetch(path, {method:'POST',
@@ -73,8 +79,11 @@ async function finishGame() {
 async function selectGame(number, autoplay = false) {
   const token = ++requestId;
   playing = false; syncControls(); $('status').textContent = `Loading game ${number}…`;
+  gameAudio.stop();
   try {
     const data = await get(`/api/games/${number}`);
+    if (token !== requestId) return;
+    await gameAudio.load(data.audio_url);
     if (token !== requestId) return;
     replay = data; selected = number; frame = 0; endWait = 0; playing = autoplay;
     syncControls(); draw();
@@ -128,6 +137,7 @@ function animate(now) {
     }
     draw();
   }
+  gameAudio.sync(frame / (replay?.fps || 60), !!replay && playing && !demo?.paused && !document.hidden, speed);
   requestAnimationFrame(animate);
 }
 
@@ -229,9 +239,11 @@ async function control(path) {
     $('status').textContent = error.message;
   } finally { launching = false; syncControls(); poll(); }
 }
-$('start').addEventListener('click', () => control(demo?.paused ? '/api/resume' : demo?.phase === 'ready' ? '/api/runs' : '/api/pause'));
+$('start').addEventListener('click', () => {gameAudio.unlock(); control(demo?.paused ? '/api/resume' : demo?.phase === 'ready' ? '/api/runs' : '/api/pause');});
+$('mute').addEventListener('click', () => {gameAudio.muted = !gameAudio.muted; gameAudio.unlock(); syncControls();});
 $('reset').addEventListener('click', () => control('/api/reset'));
-$('speed').addEventListener('change', () => {speed = Number($('speed').value);});
+$('speed').addEventListener('change', () => {speed = Number($('speed').value); syncControls();});
+document.addEventListener('visibilitychange', () => {if (document.hidden) gameAudio.stop();});
 Promise.all(['/assets/background.jpg', '/assets/grimes-sprites-large.png', '/assets/shoggoth-sprites-large.png'].map(src => new Promise((resolve, reject) => {
   const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src;
 }))).then(images => {assets = images; draw();}).catch(() => {$('status').textContent = 'Game images could not load.';});

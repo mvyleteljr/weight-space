@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import secrets
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +25,7 @@ class ReplayStore:
         self.directory = Path(directory).resolve()
         self.cache = {}
         self.lock = threading.Lock()
+        self.audio_lock = threading.Lock()
 
     def status(self):
         return json.loads((self.directory / "demo.json").read_text())
@@ -46,8 +48,20 @@ class ReplayStore:
                     frames.extend(ending)
                 self.cache[number] = {"number": number, "player_agents": entry.get("player_agents", [1, 2]),
                                       "fps": manifest["game"]["fps"], "initial_state": manifest["initial_state"],
-                                      "frames": frames, "result": entry["result"]}
+                                      "frames": frames, "result": entry["result"],
+                                      "audio_url": f"/api/games/{number}/audio.wav?run={self.directory.name}"}
             return self.cache[number]
+
+    def audio(self, number):
+        from .game_audio import render
+        game = self.game(number)
+        folder = self.directory / {1: "before", 2: "after"}.get(number, f"game-{number}")
+        path = folder / 'spectator-audio-v1.wav'
+        with self.audio_lock:
+            if not path.exists():
+                rows = [json.loads(line) for line in (folder/'steps.jsonl').read_text().splitlines()]
+                render(path, rows, len(game['frames'])/game['fps'], game['fps'])
+        return path
 
     def replies(self, after):
         status = self.status()
@@ -155,6 +169,42 @@ class ReplayStore:
 
 
 class SpectatorHandler(BaseHTTPRequestHandler):
+    def send_audio(self, path):
+        size = path.stat().st_size
+        start, end = 0, size-1
+        requested = self.headers.get('Range')
+        if requested:
+            match = re.fullmatch(r'bytes=(\d*)-(\d*)', requested)
+            if not match or not any(match.groups()):
+                self.send_error(416)
+                return
+            first, last = match.groups()
+            if first:
+                start, end = int(first), min(size-1, int(last)) if last else size-1
+            else:
+                start = max(0, size-int(last))
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{size}')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
+        self.send_response(206 if requested else 200)
+        self.send_header('Content-Type', 'audio/wav')
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Content-Length', str(end-start+1))
+        if requested:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        self.end_headers()
+        with path.open('rb') as audio:
+            audio.seek(start)
+            remaining = end-start+1
+            while remaining:
+                chunk = audio.read(min(65536, remaining))
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+
     def send_json(self, value):
         body = json.dumps(value, allow_nan=False).encode()
         self.send_response(200)
@@ -189,6 +239,15 @@ class SpectatorHandler(BaseHTTPRequestHandler):
                     self.send_json({"run": store.directory.name, "demo": store.status(), "can_start": False})
                 elif re.fullmatch(r"/api/games/[1-9][0-9]{0,4}", path):
                     self.send_json(store.game(int(path.rsplit("/", 1)[1])))
+                elif re.fullmatch(r"/api/games/[1-9][0-9]{0,4}/audio.wav", path):
+                    query = parse_qs(urlsplit(self.path).query)
+                    if query.get('run', [''])[0] != store.directory.name:
+                        self.send_error(409, 'This is not the current run')
+                        return
+                    try:
+                        self.send_audio(store.audio(int(path.split('/')[3])))
+                    except (RuntimeError, OSError, subprocess.SubprocessError):
+                        self.send_error(503, 'Game audio unavailable; check FFmpeg and audio assets')
                 elif path == "/api/policy-history":
                     self.send_json(store.policy_history() if (store.directory / "demo.json").exists() else {"agents": []})
                 elif path == "/api/replies":
@@ -234,7 +293,7 @@ class SpectatorHandler(BaseHTTPRequestHandler):
             except (URLError, TimeoutError, OSError):
                 self.send_error(503, "Stream is reconnecting")
             return
-        filename = {"/": "index.html", "/app.js": "app.js", "/status.js": "status.js", "/network.js": "network.js", "/style.css": "style.css"}.get(path)
+        filename = {"/": "index.html", "/app.js": "app.js", "/audio.js": "audio.js", "/status.js": "status.js", "/network.js": "network.js", "/style.css": "style.css"}.get(path)
         if filename is None:
             self.send_error(404)
             return

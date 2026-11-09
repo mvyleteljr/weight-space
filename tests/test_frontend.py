@@ -89,6 +89,21 @@ class FrontendTests(unittest.TestCase):
             (self.root / 'demo.json').write_text(json.dumps(self.status))
             with urlopen(base + '/api/games/10') as response:
                 self.assertEqual(json.load(response)['number'], 10)
+            audio=self.root/'after/spectator-audio-v1.wav'
+            audio.write_bytes(b'RIFF'+bytes(range(100)))
+            url=base+'/api/games/2/audio.wav?run='+self.root.name
+            with urlopen(Request(url,headers={'Range':'bytes=0-3'})) as response:
+                self.assertEqual(response.status,206)
+                self.assertEqual(response.read(),b'RIFF')
+                self.assertEqual(response.headers['Content-Range'],'bytes 0-3/104')
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(url,headers={'Range':'bytes=1000-'}))
+            self.assertEqual(error.exception.code,416)
+            error.exception.close()
+            with self.assertRaises(HTTPError) as error:
+                urlopen(base+'/api/games/2/audio.wav?run=old-run')
+            self.assertEqual(error.exception.code,409)
+            error.exception.close()
             for path in ('/.env', '/api/games/../../.env', '/assets/../model.json', '/api/replies?after=999'):
                 with self.assertRaises(HTTPError) as error:
                     urlopen(base + path)
