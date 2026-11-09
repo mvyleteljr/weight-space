@@ -76,7 +76,9 @@ the candidate's predicted action automatically.
 
 The supplied input_index maps all inputs; actions maps all 18 output IDs to movement,
 jump, and attack commands. Movement is world left/right; facing is automatic.
-Each character has attack 1 and attack 2. Commands may be ignored while busy;
+Each character has attack 1 and attack 2; both are available to your policy.
+You can idle, move left/right, jump, and combine movement, jump, and either attack.
+There is no block, crouch, or dash. Commands may be ignored while busy;
 a selected attack is not proof of a started or landed hit. Bodies block ground
 movement; jumping can clear the opponent. Both fighters can hit on the same tick.
 
