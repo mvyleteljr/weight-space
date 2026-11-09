@@ -72,7 +72,7 @@ Do not call tools. Do not submit or run source code. Do not train, compute gradi
 use an optimizer, or run an automated parameter search. Reason about the game and
 assign weights directly. You may change every weight and bias, including setting
 values to zero. For this demo, keep exactly the same layer sizes and activations:
-31 inputs -> 8 ReLU neurons -> 18 linear action scores. Largest score selects an
+33 inputs -> 8 ReLU neurons -> 18 linear action scores. Largest score selects an
 action; first index wins a tie. Matrices use [output neuron][input neuron].
 There is no recurrent memory. All actions must come from this network.
 The brief reason will be shown to the user. Explain the behavior you intend.
@@ -103,7 +103,7 @@ def run_demo(output, seed=42, max_steps=1800, timeout=300, pairing="astra-opus")
                          for i, (name, provider, model_id) in enumerate(agents)]}
     publish(output / "demo.json", status)
     try:
-        initial = initialize([31, 8, 18], seed=seed)
+        initial = initialize([33, 8, 18], seed=seed)
         save(output / "initial.json", initial)
         status["initial_sha256"] = fingerprint(initial)
         status["before"] = match(output / "initial.json", output / "initial.json",

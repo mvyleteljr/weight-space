@@ -13,19 +13,19 @@ from .demo import publish
 from .network import forward, load, save, design, architecture, revision_summary
 
 TOOLS = {
-    "set_action_feedback": "{enabled:boolean,reason:string} -> optionally add input 31: own previous selected action / 17, -1 at game start; preserves weights, new column starts zero; edit column 31 to use it; test_sequence required",
+    "set_action_feedback": "{enabled:boolean,reason:string} -> optionally add input 33: own previous selected action / 17, -1 at game start; preserves weights, new column starts zero; edit column 33 to use it; test_sequence required",
     "request_context": "{request:string,reason:string} -> send an environment/context change request to the supervising assistant; stops training for user approval; make this the final call",
 
-    "set_architecture": "{reason:string,layers:[{width:int,type:dense|recurrent,activation:linear|relu|tanh}]} -> replace with ZERO weights; 1-8 layers, width<=64, <=20000 parameters, 31 environment inputs (+ optional action feedback)/18 outputs; one policy for BOTH characters",
+    "set_architecture": "{reason:string,layers:[{width:int,type:dense|recurrent,activation:linear|relu|tanh}]} -> replace with ZERO weights; 1-8 layers, width<=64, <=20000 parameters, 33 environment inputs (+ optional action feedback)/18 outputs; one policy for BOTH characters",
     "edit_recurrent": "{reason:string,updates:[{layer:int,row:int,column:int,value:number}]} -> edit recurrent state-to-state weights",
-    "test_sequence": "{cases:[{inputs:number[31],expected_action:int|null}]} -> consecutive ticks with recurrent memory; zero memory at sequence start; max 8 ticks",
+    "test_sequence": "{cases:[{inputs:number[33],expected_action:int|null}]} -> consecutive ticks with recurrent memory; zero memory at sequence start; max 8 ticks",
 
     "info": "{} -> input names, action IDs, network shape, budgets, and game result",
     "read_steps": "{start: int, count: int=3, stride: int=1} -> recorded states, inputs and actions (max 8 steps)",
     "inspect_step": "{step: int, original: bool=false} -> own network activations and action on that recorded input",
     "read_weights": "{layer: int, row: int} -> weights and bias of one neuron",
     "edit_weights": "{reason: string, zero_all: bool=false, updates: [{layer:int,row:int,column:int|null,value:number}]} -> new private revision; null column sets bias",
-    "test_inputs": "{cases:[{inputs:number[31], expected_action:int|null}]} -> action, scores, activations, expectation check (max 8 cases); no opponent or game simulation",
+    "test_inputs": "{cases:[{inputs:number[33], expected_action:int|null}]} -> action, scores, activations, expectation check (max 8 cases); no opponent or game simulation",
     "submit": "{reason:string} -> lock current revision; requires testing the latest revision; edits optional before game 1; stateful policies need >=2 sequence ticks",
 }
 
@@ -144,20 +144,22 @@ class WeightLab:
         for recording in self.recordings:
             rows = self.rows[recording["start"]:recording["start"] + recording["count"]]
             side = recording["your_player"] - 1
-            events, counts = [], [0] * 18
+            events, healing, counts = [], [], [0] * 18
             for i, row in enumerate(rows):
                 counts[row["actions"][side]] += 1
                 before = [row["observations"][0][3] * 100, row["observations"][1][3] * 100]
                 loss = [round(before[j] - row["state"]["fighters"][j]["health"], 6) for j in range(2)]
-                if any(loss):
-                    events.append({"step": recording["start"] + i, "health_lost_self": loss[side],
-                                   "health_lost_opponent": loss[1-side]})
+                if any(v > 0 for v in loss):
+                    events.append({"step": recording["start"] + i, "health_lost_self": max(0,loss[side]),
+                                   "health_lost_opponent": max(0,loss[1-side])})
+                if row.get("powerups_collected"):
+                    healing.append({"step": recording["start"]+i, "players": row["powerups_collected"]})
             result = recording["result"]
             summaries.append({"game": recording["game"], "your_player": side + 1,
                 "outcome": "draw" if result["winner"] is None else "win" if result["winner"] == side + 1 else "loss",
                 "final_health_self": result["health"][side], "final_health_opponent": result["health"][1-side],
                 "action_counts": [{"id": i, "count": n} for i,n in enumerate(counts) if n],
-                "contact_event_count": len(events), "contact_events": events[:6] + events[-6:] if len(events)>12 else events,
+                "powerup_collections": healing, "contact_event_count": len(events), "contact_events": events[:6] + events[-6:] if len(events)>12 else events,
                 "events_truncated": len(events)>12,
                 "first_step": recording["start"], "last_step": recording["start"] + len(rows)-1})
         self._recording_summary = summaries
@@ -195,10 +197,10 @@ class WeightLab:
 
     @staticmethod
     def evaluate_input(model, inputs, memory=None):
-        if not isinstance(inputs, list) or len(inputs) != 31 or any(
+        if not isinstance(inputs, list) or len(inputs) != 33 or any(
             type(x) not in (int, float) or not math.isfinite(x) or abs(x) > 100 for x in inputs
         ):
-            raise ValueError("Supply 31 finite input values with magnitude at most 100.")
+            raise ValueError("Supply 33 finite input values with magnitude at most 100.")
         trace = forward(model, inputs, return_trace=True, memory=memory)
         action = max(range(18), key=trace["outputs"].__getitem__)
         return {"action": action, "controls": ACTIONS[action], **trace}

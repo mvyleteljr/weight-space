@@ -58,7 +58,7 @@ Do not treat a Python import filter or a child process as that isolation boundar
 ## Game status
 
 Street Fighter now has a shared fixed-step engine for human controls and model
-matches. Its dense model interface has 31 inputs and 18 action scores. Models
+matches. Its dense model interface has 33 inputs and 18 action scores. Models
 are copied before a match and remain fixed during it. See the
 [game interface](game-interface.md) for observations, actions, reset, results,
 and saved feedback. XOR remains the task for the separate agent `run` command.

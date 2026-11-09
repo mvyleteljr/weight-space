@@ -52,8 +52,8 @@ function architectureDiagram(architecture) {
     add('text',{x,y:38,'text-anchor':'middle',class:'network-count'},`${layer.width}${i ? ' · '+layer.activation : ''}`);
     for (let id=0; id<layer.width; id++) {
       const circle=add('circle',{cx:x,cy:y(i,id),r:2.5,fill:'currentColor',
-        tabindex:0,role:'button','aria-label':i===0 ? (architecture.action_feedback && id===31 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id}`,class:'network-neuron'});
-      add('title',{},i===0 ? (architecture.action_feedback && id===31 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id} · bias ${layer.biases?.[id] ?? 'unavailable'}`,circle);
+        tabindex:0,role:'button','aria-label':i===0 ? (architecture.action_feedback && id===architecture.inputs-1 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id}`,class:'network-neuron'});
+      add('title',{},i===0 ? (architecture.action_feedback && id===architecture.inputs-1 ? 'Previous action / 17 (−1 at reset)' : `Input ${id}`) : `Layer ${i-1}, neuron ${id} · bias ${layer.biases?.[id] ?? 'unavailable'}`,circle);
       nodes.push({node:circle,layer:i,index:id});
       circle.addEventListener('keydown',event=>{if (event.key==='Enter' || event.key===' ') {event.preventDefault();inspect(i,id);}});
       circle.addEventListener('click',()=>inspect(i,id));

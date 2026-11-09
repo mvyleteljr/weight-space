@@ -17,11 +17,11 @@ class TrainingFlowTests(unittest.TestCase):
             calls, errors = [], []
             def agent(lab, *args):
                 calls.append(lab.game_number)
-                lab.dispatch('test_inputs', {'cases':[{'inputs':[0]*31}]})
+                lab.dispatch('test_inputs', {'cases':[{'inputs':[0]*33}]})
                 if lab.game_number:
                     lab.dispatch('edit_weights', {'reason':'Test update', 'updates':[
                         {'layer':1,'row':0,'column':None,'value':1}]})
-                    lab.dispatch('test_inputs', {'cases':[{'inputs':[0]*31}]})
+                    lab.dispatch('test_inputs', {'cases':[{'inputs':[0]*33}]})
                 return lab.dispatch('submit', {'reason':'Ready'})
             def run():
                 try:
@@ -90,7 +90,7 @@ class TrainingFlowTests(unittest.TestCase):
                 self.assertEqual(lab.player,previous)
                 lab.dispatch('edit_weights',{'reason':'Identify agent','updates':[
                     {'layer':1,'row':0,'column':None,'value':agent_id}]})
-                lab.dispatch('test_inputs',{'cases':[{'inputs':[0]*31}]})
+                lab.dispatch('test_inputs',{'cases':[{'inputs':[0]*33}]})
                 return lab.dispatch('submit',{'reason':'Ready'})
             with patch('weight_space.tool_loop.run_agent',agent):
                 for name in ('first','repeat'):

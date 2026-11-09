@@ -15,8 +15,8 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual(len(ACTIONS), 18)
         self.assertEqual(len(set(ACTIONS)), 18)
         self.assertEqual(encode_action(), 0)
-        self.assertEqual(len(OBSERVATION_NAMES), 31)
-        self.assertEqual(len(arena.observe(1)), 31)
+        self.assertEqual(len(OBSERVATION_NAMES), 33)
+        self.assertEqual(len(arena.observe(1)), 33)
         self.assertEqual(arena.observe(1)[:14], arena.observe(2)[14:28])
         self.assertEqual(arena.observe(1)[28], -arena.observe(2)[28])
         self.assertEqual(specification()["output_size"], 18)
@@ -364,7 +364,7 @@ class ArenaTests(unittest.TestCase):
 
 class MatchTests(unittest.TestCase):
     def model(self, action=0):
-        model = initialize([31, 18], zero=True)
+        model = initialize([33, 18], zero=True)
         model["layers"][0]["bias"][action] = 1
         return model
 

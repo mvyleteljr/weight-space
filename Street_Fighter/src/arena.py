@@ -8,11 +8,13 @@ from dataclasses import asdict, dataclass
 FPS = 60
 WIDTH, HEIGHT = 1000, 600
 BODY_WIDTH, BODY_HEIGHT = 80, 180
-SPEED, GRAVITY, JUMP_SPEED = 10, 2, -30
+SPEED, GRAVITY, JUMP_SPEED = 10, 2, -36
 GRIMES_JUMP_SPEED = -42
 GRIMES_AIR_SPEED = 14
 SHOGGOTH_TURN_DELAY = 12
 PUNCH_KNOCKBACK = 16
+POWERUP_SIZE = 32
+POWERUP_COLORS = ((70, 190, 230), (215, 115, 230))
 ANIMATION_TICKS = 3
 # (damage, recovery frames after the attack animation)
 ATTACK_BALANCE = {(1, 1): (10, 12), (1, 2): (12, 18),
@@ -30,7 +32,8 @@ FIELDS = (
 )
 OBSERVATION_NAMES = (["self." + name for name in FIELDS]
                      + ["opponent." + name for name in FIELDS]
-                     + ["relative_x/width", "relative_y/height", "time_remaining"])
+                     + ["relative_x/width", "relative_y/height", "time_remaining",
+                        "self.cube_available", "opponent.cube_available"])
 
 
 def encode_action(move=0, jump=False, attack=0):
@@ -162,12 +165,16 @@ class Arena:
     def reset(self):
         self.fighters = [FighterState(1, self.width // 5, self.floor_y, False),
                          FighterState(2, self.width * 7 // 10, self.floor_y, True)]
+        self.powerups = [{"player": i+1, "x": x, "y": self.floor_y + BODY_HEIGHT - POWERUP_SIZE,
+                          "size": POWERUP_SIZE, "available": True}
+                         for i,x in enumerate((self.width - 64, 32))]
         self.steps, self.done, self.winner, self.reason = 0, False, None, None
         return self.observations()
 
     def state(self):
         return {"step": self.steps, "width": self.width, "height": self.height,
                 "max_steps": self.max_steps, "fighters": [asdict(f) for f in self.fighters],
+                "powerups": [dict(c) for c in self.powerups],
                 "done": self.done, "winner": self.winner, "reason": self.reason}
 
     def observe(self, player):
@@ -182,7 +189,8 @@ class Arena:
                     f.animation_tick / 3, float(f.player - 1)]
 
         return values(own) + values(other) + [(other.x - own.x) / self.width,
-                (other.y - own.y) / self.height, (self.max_steps - self.steps) / self.max_steps]
+                (other.y - own.y) / self.height, (self.max_steps - self.steps) / self.max_steps,
+                float(self.powerups[player-1]["available"]), float(self.powerups[2-player]["available"])]
 
     def observations(self):
         return [self.observe(1), self.observe(2)]
@@ -283,6 +291,16 @@ class Arena:
                 fighter.hit, fighter.attacking, fighter.attack_type = True, False, 0
             fighter.alive = fighter.health > 0
             fighter.animate()
+        collected = []
+        for cube, fighter in zip(self.powerups, self.fighters):
+            if not cube["available"] or not fighter.alive:
+                continue
+            left, top, right, bottom = body_box(fighter)
+            if (min(right, cube["x"] + cube["size"]) > max(left, cube["x"])
+                    and min(bottom, cube["y"] + cube["size"]) > max(top, cube["y"])):
+                fighter.health = 100
+                cube["available"] = False
+                collected.append(fighter.player)
         self.steps += 1
         knocked_out = any(not f.alive for f in self.fighters)
         if knocked_out or self.steps >= self.max_steps:
@@ -290,23 +308,24 @@ class Arena:
             self.reason = "knockout" if knocked_out else "time_limit"
             a, b = [f.health for f in self.fighters]
             self.winner = 1 if a > b else 2 if b > a else None
-        lost = [before - f.health for before, f in zip(health_before, self.fighters)]
+        lost = [min(before, hit) for before, hit in zip(health_before, damage)]
         return {"observations": self.observations(), "rewards": [(lost[1] - lost[0]) / 100,
                 (lost[0] - lost[1]) / 100], "terminated": knocked_out,
                 "truncated": self.done and not knocked_out, "done": self.done,
                 "winner": self.winner, "reason": self.reason,
-                "attacks_started": [i + 1 for i in strikes], "state": self.state()}
+                "powerups_collected": collected, "attacks_started": [i + 1 for i in strikes], "state": self.state()}
 
 
 def specification():
-    return {"version": "street-fighter-v1", "fps": FPS, "width": WIDTH, "height": HEIGHT,
+    return {"version": "street-fighter-v2", "fps": FPS, "width": WIDTH, "height": HEIGHT,
             "default_max_steps": 3600, "observation_size": len(OBSERVATION_NAMES),
             "observation_names": list(OBSERVATION_NAMES), "output_size": len(ACTIONS),
             "output_rule": "argmax; first index wins a tie", "player_order": [1, 2],
             "rules": [
+                "Each character has one full-health cube at the opposite edge; only its owner collects it by body contact, even at full health. It does not respawn. Collection occurs after damage and cannot revive a knockout.",
                 "Solid body regions prevent walking through opponents. Vertical clearance allows jumping over them.",
                 "Grimes turns immediately; Shoggoth waits 12 ticks after a side change and does not turn during an attack.",
-                "Movement, jump, and attack can be combined. Grimes jump speed is -42 and air speed is 14; Shoggoth uses -30 and 10. Shoggoth attack 1 knocks targets back with a 16px impulse decaying by 2px per tick.",
+                "Movement, jump, and attack can be combined. Grimes jump speed is -42 and air speed is 14; Shoggoth uses -36 and 10. Shoggoth attack 1 knocks targets back with a 16px impulse decaying by 2px per tick.",
                 "A jump can start only on the ground. Holding jump can start another jump after landing.",
                 "There is no block, guard, parry, crouch, dash, or invulnerability action.",
                 "Defense requires avoiding overlap with the attack area. Jumping does not grant invulnerability.",
@@ -344,7 +363,7 @@ def learning_specification():
     public["rules"] = [
         "Both characters have two distinct attacks, selected with attack 1 or attack 2.",
         "Learn attack effects and timing from recorded gameplay; tuning values and source are not provided.",
-        "Inputs describe self, opponent, relative position, and remaining match time.",
+        "Inputs describe self, opponent, relative position, remaining time, and both cube availability flags.",
         "Actions use world left/right. Facing is automatic; observe its timing during gameplay.",
         "More remaining health wins when the match step limit is reached.",
     ]

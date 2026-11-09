@@ -11,7 +11,7 @@ BOOLEAN = {"type": "boolean"}
 REASON = {"type": "string", "minLength": 1, "maxLength": 500}
 UPDATE = obj({"layer": INTEGER, "row": INTEGER, "column": {"type": ["integer", "null"]},
               "value": {"type": "number"}})
-CASE = obj({"inputs": {"type": "array", "items": {"type": "number"}, "minItems": 31, "maxItems": 31},
+CASE = obj({"inputs": {"type": "array", "items": {"type": "number"}, "minItems": 33, "maxItems": 33},
             "expected_action": {"type": ["integer", "null"]}})
 ARGUMENTS = {
     "set_action_feedback": obj({"enabled": BOOLEAN, "reason": REASON}),

@@ -16,7 +16,7 @@ no tuning tables, hitboxes, source code, or screenshots are supplied.
 {{RUN_PHASE}}
 One response per update, including initialization.
 
-Before game 1, both agents start from identical fresh 31→8→18 MLPs (zeroed in the web app). Check the supplied weight values. You may
+Before game 1, both agents start from identical fresh 33→8→18 MLPs (zeroed in the web app). Check the supplied weight values. You may
 initialize weights, redesign the network, or keep it unchanged after testing.
 There are no recordings yet; use synthetic inputs, not read_steps or inspect_step.
 After games, review the available recordings, edit, test the latest revision, and
@@ -48,7 +48,7 @@ feedback requires a test_sequence of at least two ticks. Stop after submit.
 
 # Network choices
 
-Use one network with 31 environment inputs and 18 action scores. Highest score
+Use one network with 33 environment inputs and 18 action scores. Highest score
 wins; ties choose the lowest index. Layers may be dense or recurrent, with linear,
 relu, or tanh activation: 1–8 layers, width 1–64, at most 20,000 parameters.
 
@@ -62,13 +62,13 @@ activation(W × input + R × previous_layer_output + bias), where previous_layer
 means that same layer's output on the previous tick. Use edit_recurrent for R and
 edit_weights for W/bias. State is private to each fighter and resets to zero each game.
 
-Optional set_action_feedback adds input 31: your previous selected action ID / 17,
+Optional set_action_feedback adds input 33: your previous selected action ID / 17,
 or -1 on the first tick. Existing weights are preserved; the new column starts at
-zero. Edit column 31 to use it. This remembers your command, even if the game could
+zero. Edit column 33 to use it. This remembers your command, even if the game could
 not execute it. It resets each game, works with or without recurrence, can be
 disabled, and remains enabled across architecture changes until disabled.
 
-Both test tools take 31 environment values. test_inputs resets memory and action
+Both test tools take 33 environment values. test_inputs resets memory and action
 feedback for every case; test_sequence carries them between cases, feeding back
 the candidate's predicted action automatically.
 
@@ -88,6 +88,9 @@ possible. Use the reported assignment, not a fixed identity or alternating sched
 Character input values are instead 0/1 for Grimes/Shoggoth. Inputs 0–13 describe
 self, 14–27 the opponent, 28–29 opponent minus self position, and 30 remaining time.
 x increases right; y increases downward. Positions are body anchors, not sprite edges.
+Inputs 31/32 indicate whether your/opponent’s cube is available (1/0).
+Your one-use cube restores full health: Grimes’s is at the right edge, Shoggoth’s
+at the left edge; jump past the opponent to reach it.
 Input-name divisors describe scaling, not bounds or durations; values may exceed 1
 or be negative. Booleans are 0/1; grounded=1 means on the ground, facing_right=1
 means right. Attack type is 0/0.5/1 for none/attack 1/attack 2. Animation IDs 0–6

@@ -51,8 +51,8 @@ def validate(model):
             if not finite:
                 raise ValueError("Weights and biases must be finite numbers.")
         width = len(bias)
-    if "action_feedback" in model and (model["action_feedback"] is not True or model["input_size"] != 32 or len(model["layers"][-1]["bias"]) != 18):
-        raise ValueError("Action feedback requires 32 inputs and 18 actions.")
+    if "action_feedback" in model and (model["action_feedback"] is not True or model["input_size"] not in (32, 34) or len(model["layers"][-1]["bias"]) != 18):
+        raise ValueError("Action feedback requires 34 inputs (32 for legacy policies) and 18 actions.")
     return count
 
 
@@ -187,14 +187,14 @@ def with_action_feedback(model, enabled=True):
     candidate = copy.deepcopy(model)
     if enabled != bool(candidate.get("action_feedback")):
         if enabled:
-            if candidate["input_size"] != 31 or len(candidate["layers"][-1]["bias"]) != 18:
+            if candidate["input_size"] not in (31, 33) or len(candidate["layers"][-1]["bias"]) != 18:
                 raise ValueError("Feedback requires a game policy.")
-            candidate.update(input_size=32, action_feedback=True)
+            candidate.update(input_size=candidate["input_size"]+1, action_feedback=True)
             for row in candidate["layers"][0]["weights"]:
                 row.append(0.0)
         else:
             candidate.pop("action_feedback")
-            candidate["input_size"] = 31
+            candidate["input_size"] -= 1
             for row in candidate["layers"][0]["weights"]:
                 row.pop()
     if validate(candidate) > 20_000:
@@ -206,7 +206,7 @@ def design(layers):
     """Construct a bounded, zero-initialized architecture chosen by an agent."""
     if not isinstance(layers, list) or not 1 <= len(layers) <= 8:
         raise ValueError("Choose 1 to 8 layers, ending in 18 outputs.")
-    width, count = 31, 0
+    width, count = 33, 0
     for layer in layers:
         if not isinstance(layer, dict) or set(layer) != {"width", "activation", "type"}:
             raise ValueError("Each layer needs width, activation, type.")
@@ -217,7 +217,7 @@ def design(layers):
         width = n
     if width != 18 or count > 20_000:
         raise ValueError("End in 18 outputs; at most 20,000 parameters.")
-    model = initialize([31] + [layer["width"] for layer in layers], zero=True)
+    model = initialize([33] + [layer["width"] for layer in layers], zero=True)
     for layer, spec in zip(model["layers"], layers):
         layer["activation"] = spec["activation"]
         if spec["type"] == "recurrent":

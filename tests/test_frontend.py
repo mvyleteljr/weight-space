@@ -17,7 +17,7 @@ class FrontendTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        save(self.root / 'model.json', initialize([31, 8, 18]))
+        save(self.root / 'model.json', initialize([33, 8, 18]))
         result = match(self.root / 'model.json', self.root / 'model.json', self.root / 'after', 3)
         self.status = {'games': [{'number': 2, 'result': result, 'player_agents': [2, 1]}],
                        'agents': [{'name': 'Astra'}, {'name': 'Fable'}],
@@ -40,7 +40,7 @@ class FrontendTests(unittest.TestCase):
         lab = self.root / 'edit-2/lab-1'; lab.mkdir(parents=True)
         (lab / 'replies.json').write_text(json.dumps([{'turn': 1, 'note': 'Test a jump.', 'calls': [
             {'tool': 'test_inputs', 'arguments': {}, 'result': {'revision': 1, 'cases': [
-                {'action': 4, 'expected_action': 4, 'matches_expected': True, 'inputs': [0]*31}]}}]}]))
+                {'action': 4, 'expected_action': 4, 'matches_expected': True, 'inputs': [0]*33}]}}]}]))
         notes = self.store.replies(2)['agents'][0]['replies']
         self.assertEqual(notes[0]['note'], 'Test a jump.')
         self.assertTrue(notes[0]['calls'][0]['tests'][0]['matches_expected'])
@@ -50,7 +50,7 @@ class FrontendTests(unittest.TestCase):
 
     def test_context_requests_visible_even_without_a_finished_reply(self):
         folder = self.root / 'edit-2/lab-1'; folder.mkdir(parents=True)
-        save(folder / 'revision-0.json', initialize([31, 8, 18]))
+        save(folder / 'revision-0.json', initialize([33, 8, 18]))
         requests = [{'after_game': 2, 'request': '<script>Need collision events</script>',
                      'reason': 'Understand blocked movement.', 'status': 'requested', 'id': 1}]
         (folder / 'context-requests.json').write_text(json.dumps(requests))

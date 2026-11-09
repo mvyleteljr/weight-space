@@ -100,12 +100,12 @@ def main():
             fixture = report_dir / 'viewer-fixture'
             fixture.mkdir()
             models = [fixture / 'one.json', fixture / 'two.json']
-            model = initialize([31, 18], zero=True)
+            model = initialize([33, 18], zero=True)
             for path in models:
                 save(path, model)
             match(*models, fixture / 'before', max_steps=180)
             for index, path in enumerate(models):
-                edited = initialize([31, 18], zero=True)
+                edited = initialize([33, 18], zero=True)
                 edited['layers'][0]['bias'][encode_action(move=1 if index == 0 else -1, attack=1)] = 1
                 path.write_text(json.dumps(edited))
             match(*models, fixture / 'after', max_steps=180)

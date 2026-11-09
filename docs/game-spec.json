@@ -1,10 +1,10 @@
 {
-  "version": "street-fighter-v1",
+  "version": "street-fighter-v2",
   "fps": 60,
   "width": 1000,
   "height": 600,
   "default_max_steps": 3600,
-  "observation_size": 31,
+  "observation_size": 33,
   "observation_names": [
     "self.x/width",
     "self.y/height",
@@ -36,7 +36,9 @@
     "opponent.character",
     "relative_x/width",
     "relative_y/height",
-    "time_remaining"
+    "time_remaining",
+    "self.cube_available",
+    "opponent.cube_available"
   ],
   "output_size": 18,
   "output_rule": "argmax; first index wins a tie",
@@ -45,9 +47,10 @@
     2
   ],
   "rules": [
+    "Each character has one full-health cube at the opposite edge; only its owner collects it by body contact, even at full health. It does not respawn. Collection occurs after damage and cannot revive a knockout.",
     "Solid body regions prevent walking through opponents. Vertical clearance allows jumping over them.",
     "Grimes turns immediately; Shoggoth waits 12 ticks after a side change and does not turn during an attack.",
-    "Movement, jump, and attack can be combined. Grimes jump speed is -42 and air speed is 14; Shoggoth uses -30 and 10. Shoggoth attack 1 knocks targets back with a 16px impulse decaying by 2px per tick.",
+    "Movement, jump, and attack can be combined. Grimes jump speed is -42 and air speed is 14; Shoggoth uses -36 and 10. Shoggoth attack 1 knocks targets back with a 16px impulse decaying by 2px per tick.",
     "A jump can start only on the ground. Holding jump can start another jump after landing.",
     "There is no block, guard, parry, crouch, dash, or invulnerability action.",
     "Defense requires avoiding overlap with the attack area. Jumping does not grant invulnerability.",

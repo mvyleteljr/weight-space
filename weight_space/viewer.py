@@ -142,6 +142,12 @@ def main():
             index = min(int(frame), len(rows))
             state = replay["manifest"]["initial_state"] if index == 0 else rows[index - 1]["state"]
             stage.blit(background, (0, 0))
+            for cube in state.get("powerups", []):
+                if cube["available"]:
+                    color = (70,190,230) if cube["player"] == 1 else (215,115,230)
+                    rect = pygame.Rect(cube["x"],cube["y"],cube["size"],cube["size"])
+                    pygame.draw.rect(stage,color,rect)
+                    pygame.draw.rect(stage,(255,255,255),rect,2)
             for i in (1, 0):
                 fighter = fighters[i]
                 fighter.state = FighterState(**state["fighters"][i])

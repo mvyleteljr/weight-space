@@ -16,7 +16,7 @@ class LabTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        save(self.root / 'initial.json', initialize([31, 8, 18], seed=42))
+        save(self.root / 'initial.json', initialize([33, 8, 18], seed=42))
         match(self.root / 'initial.json', self.root / 'initial.json', self.root / 'game', 3)
         self.lab = WeightLab(self.root / 'initial.json', self.root / 'game', self.root / 'lab', 1)
 
@@ -46,13 +46,13 @@ class LabTests(unittest.TestCase):
         original = self.lab.dispatch('inspect_step', {'step': 0, 'original': True})
         self.assertEqual(original['action'], original['recorded_action'])
         self.edit()
-        result = self.lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31, 'expected_action': 4}]})
+        result = self.lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33, 'expected_action': 4}]})
         self.assertFalse(result['opponent_used'])
         self.assertTrue(result['cases'][0]['matches_expected'])
         self.assertEqual(result['cases'][0]['layers'][0]['outputs'], [0]*8)
         self.edit()
         self.assertIn('error', self.lab.dispatch('submit', {'reason': 'New edit needs a test.'}))
-        self.lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31, 'expected_action': 0}]})
+        self.lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33, 'expected_action': 0}]})
         # A failed expectation is feedback. It does not prevent a deliberate submission.
         self.lab.dispatch('submit', {'reason': 'Keep action four.'})
         self.assertTrue(self.lab.submitted)
@@ -69,13 +69,13 @@ class LabTests(unittest.TestCase):
         self.assertIn('error', self.lab.dispatch('exec', {'code': 'raise Exception()'}))
         self.assertIn('error', self.lab.dispatch('read_weights', {'path': '/etc/passwd'}))
         self.assertIn('error', self.lab.dispatch('read_steps', {'start': 0, 'count': 9}))
-        self.assertIn('error', self.lab.dispatch('test_inputs', {'cases': [{'inputs': [True]*31}]}))
+        self.assertIn('error', self.lab.dispatch('test_inputs', {'cases': [{'inputs': [True]*33}]}))
         with self.assertRaises(ValueError):
-            self.lab.dispatch('test_inputs', {'cases': [{'inputs': [float('nan')]*31}]})
+            self.lab.dispatch('test_inputs', {'cases': [{'inputs': [float('nan')]*33}]})
 
     def test_budgets(self):
         self.lab.test_cases = 64
-        self.assertIn('error', self.lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]}))
+        self.assertIn('error', self.lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]}))
         self.lab.revision = 12
         self.assertIn('error', self.edit())
         self.lab.calls = 40
@@ -99,7 +99,7 @@ class LabTests(unittest.TestCase):
             return json.dumps({'note': 'Set and test a bias.', 'calls': [
                 {'tool': 'edit_weights', 'arguments': {'reason': 'Set a bias.', 'updates': [
                     {'layer': 1, 'row': 0, 'column': None, 'value': 1}]}},
-                {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*31}]}},
+                {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*33}]}},
                 {'tool': 'submit', 'arguments': {'reason': 'Keep these weights.'}}]}), {}
         with patch('weight_space.tool_loop.complete', provider):
             run_agent(self.lab, 'codex', 'test')
@@ -121,7 +121,7 @@ class LabTests(unittest.TestCase):
             calls = [
                 {'tool': 'edit_weights', 'arguments': {'reason': 'Set a bias.', 'zero_all': True,
                     'updates': [{'layer': 1, 'row': action, 'column': None, 'value': 1}]}},
-                {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*31, 'expected_action': action}]}},
+                {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*33, 'expected_action': action}]}},
                 {'tool': 'submit', 'arguments': {'reason': 'The test passes.'}},
             ]
             return json.dumps({'note': 'Set and test one action.', 'calls': calls}), {}
@@ -147,7 +147,7 @@ class LabTests(unittest.TestCase):
             self.assertLessEqual(timeout, seconds)
             lab.dispatch('edit_weights', {'reason': 'Change bias.', 'updates': [
                 {'layer': 1, 'row': 4, 'column': None, 'value': lab.game_number}]})
-            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]})
             return lab.dispatch('submit', {'reason': 'Keep weights.'})
         with patch('weight_space.tool_loop.time.monotonic', side_effect=lambda: clock[0]), \
              patch('weight_space.tool_loop.match', play), \
@@ -173,7 +173,7 @@ class LabTests(unittest.TestCase):
                 self.assertEqual(lab.result['models'][lab.player - 1]['sha256'], fingerprint(lab.initial))
             lab.dispatch('edit_weights', {'reason': 'Increase a bias.', 'updates': [
                 {'layer': 1, 'row': 4, 'column': None, 'value': lab.game_number}]})
-            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]})
             return lab.dispatch('submit', {'reason': 'Keep this revision.'})
         with patch('weight_space.tool_loop.run_agent', agent):
             result = run_tool_demo(self.root / 'three', max_steps=3, games=3)
@@ -198,7 +198,7 @@ class LabTests(unittest.TestCase):
                 self.assertEqual(trace['action'], trace['recorded_action'])
             lab.dispatch('edit_weights', {'reason': 'Set a bias.', 'updates': [
                 {'layer': 1, 'row': lab.player, 'column': None, 'value': lab.game_number}]})
-            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]})
             return lab.dispatch('submit', {'reason': 'Use this on both sides.'})
         with patch('weight_space.tool_loop.run_agent', agent):
             result = run_tool_demo(self.root / 'paired', max_steps=3, games=6, swap_sides=True, paired_games=True)
@@ -224,7 +224,7 @@ class LabTests(unittest.TestCase):
             seen.append((lab.game_number, canonical))
             lab.dispatch('edit_weights', {'reason': 'Set a bias.', 'updates': [
                 {'layer': 1, 'row': canonical, 'column': None, 'value': lab.game_number}]})
-            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]})
             return lab.dispatch('submit', {'reason': 'Use this revision.'})
         winners = iter([1, 1, None, 2])
         def recorded_match(*args):
@@ -242,7 +242,7 @@ class LabTests(unittest.TestCase):
             {'tool': 'edit_weights', 'arguments': {'reason': 'Set a bias.', 'updates': [
                 {'layer': 1, 'row': 4, 'column': None, 'value': 2}]}}]})
         finish = json.dumps({'note': 'Test and submit.', 'calls': [
-            {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*31}]}},
+            {'tool': 'test_inputs', 'arguments': {'cases': [{'inputs': [0]*33}]}},
             {'tool': 'submit', 'arguments': {'reason': 'Keep this revision.'}}]})
         with patch('weight_space.tool_loop.complete', side_effect=[(edit, {}), TimeoutError('Slow reply'),
                                                                   (finish, {})]) as provider:
@@ -273,7 +273,7 @@ class LabTests(unittest.TestCase):
                 {'layer': 1, 'row': 4, 'column': None, 'value': lab.game_number}]})
             if provider == 'claude' and lab.game_number == 2:
                 raise TimeoutError('Slow reply')
-            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]})
             return lab.dispatch('submit', {'reason': 'Keep this revision.'})
         with patch('weight_space.tool_loop.run_agent', agent):
             result = run_tool_demo(self.root / 'timeout', max_steps=3, games=3, swap_sides=True)
@@ -289,7 +289,7 @@ class LabTests(unittest.TestCase):
         packet = {'note':'Try moving right.', 'calls':[
             {'tool':'edit_weights','arguments':{'reason':'Explore','updates':[
                 {'layer':1,'row':1,'column':None,'value':2}]}},
-            {'tool':'test_inputs','arguments':{'cases':[{'inputs':[0]*31}]}},
+            {'tool':'test_inputs','arguments':{'cases':[{'inputs':[0]*33}]}},
             {'tool':'submit','arguments':{'reason':'Test in the next match'}}]}
         with patch('weight_space.tool_loop.complete',return_value=(json.dumps(packet),{})) as provider:
             result=run_agent(self.lab,'codex','test')

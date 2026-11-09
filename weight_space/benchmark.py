@@ -21,7 +21,7 @@ def run(output, models, reply_timeout=25, edit_seconds=50):
         parsed.append((provider, model))
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    save(output / "initial.json", initialize([31, 8, 18], seed=42))
+    save(output / "initial.json", initialize([33, 8, 18], seed=42))
     match(output / "initial.json", output / "initial.json", output / "before", 1800)
     results = []
 

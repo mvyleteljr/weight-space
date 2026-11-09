@@ -101,13 +101,13 @@ Pygame now handles the background as well as the window. OpenCV and NumPy were
 removed from the game dependencies. The display smoke test passes without the
 duplicate SDL warning.
 
-Human controls and model matches share a fixed-step engine. Models receive 31
+Human controls and model matches share a fixed-step engine. Models receive 33
 state values and return 18 action scores. Run a headless match with:
 
 ```sh
 uv run python -m weight_space game-spec
-uv run python -m weight_space init workspaces/player-1.json --sizes 31 16 18 --seed 1
-uv run python -m weight_space init workspaces/player-2.json --sizes 31 16 18 --seed 2
+uv run python -m weight_space init workspaces/player-1.json --sizes 33 16 18 --seed 1
+uv run python -m weight_space init workspaces/player-2.json --sizes 33 16 18 --seed 2
 uv run python -m weight_space match workspaces/player-1.json workspaces/player-2.json --output runs/match-01
 ```
 
@@ -130,7 +130,7 @@ except the final game. The tally counts agent wins and shows draws separately.
 
 The input-test loop lets Astra and Opus 5.5 inspect recorded actions, read layer
 activations, edit explicit weight values, and test chosen inputs before submission.
-Both start with the same random 31–8–18 network. Each agent has its own candidate.
+Both start with the same random 33–8–18 network. Each agent has its own candidate.
 Tests run a network forward pass. They do not use an opponent or advance the game.
 
 ```sh
@@ -268,7 +268,7 @@ the game command's boolean `--demo` selects the scripted test routine.
 ### Earlier one-reply demo
 
 Start a two-game demo. This makes one model call to each agent. Both start with
-the same random 31–8–18 network. They receive the same game 1 feedback and edit
+the same random 33–8–18 network. They receive the same game 1 feedback and edit
 their weights independently. The architecture stays fixed for this demo.
 
 ```sh
@@ -307,7 +307,7 @@ Inspect activations for any chosen observation with:
 uv run python -m weight_space probe path/to/model.json --inputs 0 1
 ```
 
-Supply the exact number of inputs for the model: two for XOR or 31 for Street
+Supply the exact number of inputs for the model: two for XOR or 33 for Street
 Fighter. `forward(model, inputs, return_trace=True)` provides the same data in Python.
 
 See `Street_Fighter/LICENSE` and `Street_Fighter/UPSTREAM_LICENSE.md` for license
@@ -340,7 +340,7 @@ agents; they infer attack behavior from recorded gameplay.
 ### Agent-designed policies and history
 
 The tool-loop agents can now change their architecture and weights each editing
-round. Each agent has **one policy for both characters**, with 31 inputs and 18
+round. Each agent has **one policy for both characters**, with 33 inputs and 18
 action scores. Architectures support 1–8 dense or simple recurrent layers,
 1–64 neurons per layer, linear/ReLU/tanh activations, and at most 20,000
 parameters. These are data-only networks, not agent-supplied executable code.
@@ -391,16 +391,16 @@ Purple loops denote recurrent state; they are schematic, not individual recurren
 These diagrams show weights, not live activations. Wide networks scroll horizontally; history still browses independently.
 
 Previous-action feedback is optional: agents call `set_action_feedback` with
-`enabled: true` to add input 31. Its value is the previous selected action ID / 17,
+`enabled: true` to add input 33. Its value is the previous selected action ID / 17,
 or -1 at the start of each game. It records the command selected even when combat
 rules prevent it from executing. Existing weights are preserved; the new column
 starts at zero. Agents can edit that column or disable feedback. This works with
 MLPs and recurrent layers. `test_sequence` carries predicted actions between ticks;
-independent `test_inputs` cases reset feedback. Both accept the usual 31 environment
+independent `test_inputs` cases reset feedback. Both accept the usual 33 environment
 values. Stateful policies must pass a sequence test before submission.
 
 The web controller has **Play/Pause**, **Speed**, and **Reset**. Launching the
-server or pressing Reset starts a fresh session: identical zeroed 31–8–18 policies,
+server or pressing Reset starts a fresh session: identical zeroed 33–8–18 policies,
 zero scores, no old games or agent context. Both agents receive their initial
 context and can initialize weights or redesign their network. **Initializing…**
 is disabled until both agents submit their first policies. **Play** then begins

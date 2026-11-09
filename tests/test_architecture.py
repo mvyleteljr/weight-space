@@ -36,7 +36,7 @@ class ArchitectureTests(unittest.TestCase):
 
     def test_memory_changes_action_and_is_private_and_resets(self):
         first, second = DensePolicy(self.model), DensePolicy(self.model)
-        inputs = [1] + [0]*30
+        inputs = [1] + [0]*32
         self.assertEqual(first.act(inputs), 0)
         self.assertEqual(first.act(inputs), 1)
         self.assertEqual(second.act(inputs), 0)
@@ -51,8 +51,8 @@ class ArchitectureTests(unittest.TestCase):
             with self.assertRaises(ValueError): design(specs)
         bad = memory_model(); bad['layers'][0]['recurrent'] = [[1, 2]]
         with self.assertRaises(ValueError): validate(bad)
-        with self.assertRaises(ValueError): forward(self.model, [0]*31, memory=[[float('nan')], []])
-        with self.assertRaises(ValueError): forward(self.model, [0]*31, memory=[[], []])
+        with self.assertRaises(ValueError): forward(self.model, [0]*33, memory=[[float('nan')], []])
+        with self.assertRaises(ValueError): forward(self.model, [0]*33, memory=[[], []])
 
     def test_recurrent_matches_are_deterministic_and_reset_between_games(self):
         a = match(self.root / 'model.json', self.root / 'model.json', self.root / 'a', 8)
@@ -62,7 +62,7 @@ class ArchitectureTests(unittest.TestCase):
 
     def test_sequence_tests_differ_from_independent_inputs(self):
         lab = self.lab()
-        cases = {'cases': [{'inputs': [1]+[0]*30}, {'inputs': [1]+[0]*30}]}
+        cases = {'cases': [{'inputs': [1]+[0]*32}, {'inputs': [1]+[0]*32}]}
         independent = lab.dispatch('test_inputs', cases)
         sequence = lab.dispatch('test_sequence', cases)
         self.assertEqual([c['action'] for c in independent['cases']], [0, 0])
@@ -93,9 +93,9 @@ class ArchitectureTests(unittest.TestCase):
             {'layer': 0, 'row': 0, 'column': 0, 'value': .9}]})
         self.assertEqual(edited['revision'], 2)
         self.assertIn('error', lab.dispatch('submit', {'reason': 'Too early.'}))
-        lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}, {'inputs': [0]*31}]})
+        lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}, {'inputs': [0]*33}]})
         self.assertIn('error', lab.dispatch('submit', {'reason': 'Memory is not tested.'}))
-        lab.dispatch('test_sequence', {'cases': [{'inputs': [0]*31}, {'inputs': [0]*31}]})
+        lab.dispatch('test_sequence', {'cases': [{'inputs': [0]*33}, {'inputs': [0]*33}]})
         self.assertNotIn('error', lab.dispatch('submit', {'reason': 'Ready.'}))
         self.assertEqual(load(lab.directory / 'submitted.json')['layers'][0]['recurrent'][0][0], .9)
 
@@ -110,7 +110,7 @@ class ArchitectureTests(unittest.TestCase):
                 self.assertEqual(architecture(lab.model)['memory_size'], 3 if recurrent else 0)
             lab.dispatch('edit_weights', {'reason': 'Choose action.', 'updates': [
                 {'layer': 1, 'row': 1, 'column': None, 'value': lab.game_number}]})
-            lab.dispatch('test_sequence', {'cases': [{'inputs': [0]*31}, {'inputs': [0]*31}]})
+            lab.dispatch('test_sequence', {'cases': [{'inputs': [0]*33}, {'inputs': [0]*33}]})
             result = lab.dispatch('submit', {'reason': 'Ready.'})
             events = [json.loads(x) for x in (lab.directory / 'tools.jsonl').read_text().splitlines()]
             (lab.directory / 'replies.json').write_text(json.dumps([{'turn': 1, 'note': 'My public note.',
@@ -167,7 +167,7 @@ class ArchitectureTests(unittest.TestCase):
             else:
                 lab.dispatch('edit_weights', {'reason':'Tune.', 'updates':[
                     {'layer':0,'row':0,'column':None,'value':1}]})
-            lab.dispatch('test_inputs', {'cases':[{'inputs':[0]*31}]})
+            lab.dispatch('test_inputs', {'cases':[{'inputs':[0]*33}]})
             return lab.dispatch('submit', {'reason':'Ready.'})
         with patch('weight_space.tool_loop.run_agent', agent):
             status=run_tool_demo(self.root / 'prepared', games=2, max_steps=3, prepare_agents=True)
@@ -191,7 +191,7 @@ class ArchitectureTests(unittest.TestCase):
             seen.append(fingerprint(lab.model))
             lab.dispatch('edit_weights', {'reason': 'Unique learned weight.', 'updates': [
                 {'layer': 0, 'row': 0, 'column': 0, 'value': 9876}]})
-            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*31}]})
+            lab.dispatch('test_inputs', {'cases': [{'inputs': [0]*33}]})
             return lab.dispatch('submit', {'reason': 'Tested.'})
         with patch('weight_space.tool_loop.run_agent', agent):
             first = run_tool_demo(self.root / 'fresh-a', seed=100, games=2, max_steps=3)
@@ -254,7 +254,7 @@ class ArchitectureTests(unittest.TestCase):
     def test_context_index_and_perspective_match_recorded_observations(self):
         lab = self.lab()
         info = lab.info({})
-        self.assertEqual(len(info['input_index']), 31)
+        self.assertEqual(len(info['input_index']), 33)
         self.assertEqual(info['input_index'][14]['name'], 'opponent.x/width')
         summary = info['recording_summary'][0]
         self.assertEqual(sum(a['count'] for a in summary['action_counts']), len(lab.rows))
@@ -277,10 +277,10 @@ class ArchitectureTests(unittest.TestCase):
         model = memory_model()
         graph = architecture(model, include_connections=True)
         self.assertEqual(graph['layers'][0]['connections'][0], {'from':0,'to':0,'weight':1})
-        self.assertEqual(graph['layers'][0]['parameters'], 33)
-        self.assertEqual(graph['input_neurons'], list(range(31)))
+        self.assertEqual(graph['layers'][0]['parameters'], 35)
+        self.assertEqual(graph['input_neurons'], list(range(33)))
         self.assertEqual(graph['layers'][1]['neurons'], list(range(18)))
-        self.assertEqual(len(graph['layers'][0]['connections']), 31)
+        self.assertEqual(len(graph['layers'][0]['connections']), 33)
         self.assertEqual(len(graph['layers'][1]['connections']), 18)
         self.assertEqual(architecture(model)['layers'][0]['connections'], [])
         altered = memory_model(); altered['layers'][0]['weights'][0][0] = 2
@@ -323,7 +323,7 @@ class ArchitectureTests(unittest.TestCase):
         prompt = prompt_for(self.lab(), [], 1)
         self.assertIn('set_architecture', prompt)
         self.assertIn('test_sequence', prompt)
-        self.assertNotIn('Keep the 31 -> 8', prompt)
+        self.assertNotIn('Keep the 33 -> 8', prompt)
         self.assertNotIn('attack_balance', prompt)
         self.assertNotIn('recovery_frames', prompt)
 

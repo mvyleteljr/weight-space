@@ -440,6 +440,12 @@ def game_loop():
             victory_screen(winner_img)
             return
 
+        for cube in arena.state().get("powerups", []):
+            if cube["available"]:
+                color = (70,190,230) if cube["player"] == 1 else (215,115,230)
+                rect = pygame.Rect(cube["x"],cube["y"],cube["size"],cube["size"])
+                pygame.draw.rect(screen,color,rect)
+                pygame.draw.rect(screen,(255,255,255),rect,2)
         fighter_2.draw(screen)
         fighter_1.draw(screen)
 

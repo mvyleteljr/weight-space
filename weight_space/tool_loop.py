@@ -302,7 +302,7 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
     sessions = [ProviderSession(provider, model) if persistent_sessions and provider in ("codex", "claude") else None
                 for _, provider, model in agents]
     try:
-        initial = initialize([31, 8, 18], seed=seed, zero=zero_initial)
+        initial = initialize([33, 8, 18], seed=seed, zero=zero_initial)
         save(output / "initial.json", initial)
         status["initial_sha256"] = fingerprint(initial)
         current = [output / "initial.json"] * 2

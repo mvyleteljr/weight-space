@@ -65,7 +65,7 @@ class SessionTests(unittest.TestCase):
 
     def test_delta_omits_old_context_and_history_and_sends_edits(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder);save(root/'model.json',initialize([31,8,18]))
+            root=Path(folder);save(root/'model.json',initialize([33,8,18]))
             lab=WeightLab(root/'model.json',None,root/'lab',1,0)
             session=ProviderSession('codex','test');self.addCleanup(session.close)
             context=root/'context.md';context.write_text('Original instructions {{CURRENT_SUMMARY}}')
@@ -88,7 +88,7 @@ class SessionTests(unittest.TestCase):
             sessions.append((provider,session.session_id));prompts.append(prompt)
             packet={'note':'Tested update.','calls':[
                 {'tool':'edit_weights','arguments':{'reason':'Select action.','updates':[{'layer':1,'row':1,'column':None,'value':2}]}},
-                {'tool':'test_inputs','arguments':{'cases':[{'inputs':[0]*31}]}},
+                {'tool':'test_inputs','arguments':{'cases':[{'inputs':[0]*33}]}},
                 {'tool':'submit','arguments':{'reason':'Verified.'}}]}
             return json.dumps(packet),{'session_id':session.session_id}
         with tempfile.TemporaryDirectory() as folder,patch('weight_space.tool_loop.complete',provider):

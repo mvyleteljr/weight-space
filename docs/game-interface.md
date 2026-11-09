@@ -8,13 +8,13 @@ matches use the same engine. Agent-written Python remains disabled.
 
 ```sh
 uv run python -m weight_space game-spec
-uv run python -m weight_space init workspaces/player-1.json --sizes 31 16 18 --seed 1
-uv run python -m weight_space init workspaces/player-2.json --sizes 31 16 18 --seed 2
+uv run python -m weight_space init workspaces/player-1.json --sizes 33 16 18 --seed 1
+uv run python -m weight_space init workspaces/player-2.json --sizes 33 16 18 --seed 2
 uv run python -m weight_space match workspaces/player-1.json workspaces/player-2.json --output runs/match-01
 ```
 
 `init` creates fresh weights. Edit the JSON to program a policy. The model must
-have 31 inputs and 18 outputs. The highest output selects the action. The first
+have 33 inputs and 18 outputs. The highest output selects the action. The first
 index wins a tie. Action ID zero selects idle. All other architecture rules remain
 in the [model contract](model-contract.md).
 
@@ -181,3 +181,13 @@ finishes an active attack before turning. Its forward punch (K / attack 1) appli
 knockback on confirmed contact only, clamped to stage boundaries. These rules
 are shared by human play and training; the agent-facing interface still omits
 combat tuning values.
+
+## One-use health cubes
+
+Grimes owns the cyan cube at the right edge; Shoggoth owns the purple cube at the
+left edge. Body contact restores health to 100 and consumes only the owner's cube,
+even if already at full health. No respawn until a new game. A knockout cannot
+collect a cube. Damage resolves before pickup; rewards still measure damage, not healing.
+Inputs 31/32 are self/opponent cube availability. Optional previous-action feedback
+moves to input 33. Existing 31-input policies must be reinitialized for new matches;
+archived game recordings remain viewable.

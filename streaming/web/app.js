@@ -85,6 +85,15 @@ function draw() {
   const index = replay ? Math.min(replay.frames.length, Math.floor(frame)) : 0;
   const state = index ? replay.frames[index - 1] : (replay?.initial_state || idleState);
   ctx.drawImage(assets[0], 0, 0, 1000, 600);
+  for (const cube of state.powerups || []) {
+    if (!cube.available) continue;
+    ctx.fillStyle = cube.player === 1 ? '#46bee6' : '#d773e6';
+    ctx.fillRect(cube.x, cube.y, cube.size, cube.size);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.strokeRect(cube.x+1, cube.y+1, cube.size-2, cube.size-2);
+    ctx.fillStyle = '#fff'; ctx.fillRect(cube.x+cube.size/2-2,cube.y+8,4,cube.size-16);
+    ctx.fillRect(cube.x+8,cube.y+cube.size/2-2,cube.size-16,4);
+  }
   [1, 0].forEach(i => {
     const fighter = state.fighters[i];
     // Keep Grimes at her existing world size with the new 500px source frames.

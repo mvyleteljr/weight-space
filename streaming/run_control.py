@@ -34,7 +34,7 @@ class RunManager:
         name = "ready-" + secrets.token_hex(6)
         self.directory = self.runs / name
         self.directory.mkdir()
-        save(self.directory / "initial.json", initialize([31, 8, 18], zero=True))
+        save(self.directory / "initial.json", initialize([33, 8, 18], zero=True))
         self.placeholder = {"phase": "ready", "games": [], "edit_rounds": [],
                             "tally": {"wins": [0, 0], "draws": 0, "games": 0},
                             "agents": [{"name": "Astra", "status": "ready"},
