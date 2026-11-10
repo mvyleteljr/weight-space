@@ -425,17 +425,26 @@ is disabled at other speeds; returning to 1× rejoins the displayed game time.
 This audio path is for the training page; the separate legacy RTSP broadcaster
 still publishes video only.
 
-The web controller has **Start training/Pause training**, **Start autoplay/Stop autoplay**, **Mute**, **Speed**, and **Reset**. Launching the
-server or pressing Reset starts a fresh session: identical zeroed 33–8–18 policies,
-zero scores, no old games or agent context. Both agents receive their initial
-context and can initialize weights or redesign their network. **Initializing…**
-is disabled until both agents submit their first policies. **Start training** then begins
-the 10-minute training session. Initialization failure keeps Start disabled; Reset
-retries with a fresh session.
-Cold training launches never restore the last-run pointer, saved architectures,
-recurrent state, action feedback, or agent conversation IDs. Prior run files remain
-archived in `runs/`; they are not included in the fresh agents' context. Weights may
-be nonzero once the agents finish their new initialization proposals.
+The web controller has **Start training/Pause training**, **Start autoplay/Stop autoplay**, **Mute**, **Speed**, and **Reset**. Restarting the
+server reopens the current run from `runs/.frontend-current.json`, preserving
+accepted architectures and weights, scores, games, policy history, prompts, and
+model responses. It waits for **Start training** before resuming gameplay.
+Each agent receives its own saved conversation on the first update after a
+restart, then normal incremental updates. An interrupted match is shown again
+without counting its score twice. An interrupted update keeps completed
+submissions and the previous policy for any unfinished agent; partial edits are
+not applied and the same round is not queried again.
+
+Only the first launch without a saved run, or **Reset**, starts from identical
+zeroed 33–8–18 policies with zero scores and no old agent context. Both agents
+receive their initial context and can initialize weights or redesign their
+network. **Initializing…** is disabled until both submit their first policies.
+If initial setup was interrupted, restarting retries only the missing agent and
+preserves all earlier responses. **Start training** begins the 10-minute session.
+Reset archives the previous run and starts fresh; its logs are not sent to the
+new agents. A missing or invalid saved-run pointer produces an error rather than
+silently replacing learned policies. Pending environment requests still require
+approval; restarting does not bypass them.
 
 Every game appears automatically, in order. Speed changes how fast the game is
 shown. The training button becomes **Pause training** while running; **Start training** resumes it. An agent update already underway can finish, but the next game waits for resume. There are no replay, seeking, or game-selection controls. The trainer

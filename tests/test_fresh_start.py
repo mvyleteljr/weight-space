@@ -1,4 +1,4 @@
-"""Reset/cold-start isolation, without provider calls or a live game server."""
+"""Reset isolation and saved-run restoration, without provider calls or a live game server."""
 import json
 from pathlib import Path
 import tempfile
@@ -57,28 +57,42 @@ class FreshStartTests(unittest.TestCase):
         for name in ('initial-agent-1.json', 'old-context.txt', 'start', 'paused', 'viewed-1'):
             self.assertFalse((manager.directory/name).exists())
 
-    def test_cold_training_ignores_saved_demo_environment_and_last_run_pointer(self):
+    def test_cold_training_reopens_saved_run_and_ignores_readonly_demo_selection(self):
         with tempfile.TemporaryDirectory() as temp:
             old = self.stale_run(temp)
             saved = {p:p.read_bytes() for p in old.directory.rglob('*') if p.is_file()}
-            def prepare(manager):
-                self.assertNotEqual(manager.directory, old.directory)
-                self.assert_empty_run(manager)
-                return manager.directory
-            with patch.dict('os.environ', {'WEIGHT_SPACE_DEMO':str(old.directory)}), \
-                 patch.object(RunManager, 'prepare', autospec=True, side_effect=prepare) as launch:
-                # The parser can pass a demo explicitly or from the environment;
-                # neither may seed a cold training server with archived weights.
-                for demo in (None, old.directory, str(old.directory)):
-                    server = SimpleNamespace()
-                    configure_runs(server, temp, allow_new_runs=True, demo=demo)
-                    self.assertEqual(server.replay_store.directory, server.run_manager.directory)
-                self.assertEqual(launch.call_count, 3)
-            for path, data in saved.items(): self.assertEqual(path.read_bytes(), data)
+            process = Mock(); process.poll.return_value = None
+            with patch.dict('os.environ', {'WEIGHT_SPACE_DEMO':'some-other-run'}), \
+                 patch('streaming.run_control.shutil.which', return_value='/bin/uv'), \
+                 patch('streaming.run_control.subprocess.Popen', return_value=process) as launch, \
+                 patch('streaming.run_control.threading.Thread.start'):
+                server = SimpleNamespace()
+                configure_runs(server, temp, allow_new_runs=True, demo='unrelated-saved-demo')
+            self.assertEqual(server.run_manager.directory, old.directory)
+            self.assertEqual(server.replay_store.directory, old.directory)
+            command = launch.call_args.args[0]
+            self.assertIn('--continue-run', command)
+            self.assertIn('--wait-for-start', command)
+            self.assertNotIn('--zero-initial', command)
+            for path, data in saved.items():
+                if path.name not in ('start','paused'):
+                    self.assertEqual(path.read_bytes(), data)
             server = SimpleNamespace()
             configure_runs(server, temp, demo=old.directory)
             self.assertIsNone(server.run_manager)
             self.assertEqual(server.replay_store.directory, old.directory)
+
+    def test_first_launch_starts_fresh_and_invalid_pointer_never_silently_resets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(RunManager, 'prepare', autospec=True) as prepare:
+                manager = RunManager.reopen(temp)
+                self.assert_empty_run(manager)
+                prepare.assert_called_once_with(manager)
+                for name in ('missing-run', '../outside'):
+                    manager.pointer.write_text(json.dumps({'run':name}))
+                    with self.assertRaisesRegex(ValueError, 'Saved run is unavailable'):
+                        RunManager.reopen(temp)
+                self.assertEqual(prepare.call_count, 1)
 
     def test_reset_clears_nonzero_recurrent_policy_context_and_autoplay(self):
         with tempfile.TemporaryDirectory() as temp:

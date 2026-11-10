@@ -5,6 +5,7 @@ import json
 import math
 import random
 import re
+import shutil
 from pathlib import Path
 import time
 import threading
@@ -15,7 +16,7 @@ from .lab import WeightLab, TOOLS, SINGLE_REPLY_TOOLS
 from .network import encode, fingerprint, initialize, load, save
 from .providers import complete, ProviderSession
 from .tool_schema import TOOL_REPLY_SCHEMA, reply_schema
-from .checkpoint import current_models, conversation_history
+from .checkpoint import current_models, conversation_history, lab_directories, editing_rounds, training_lock
 
 SINGLE_REPLY_SCHEMA = reply_schema(SINGLE_REPLY_TOOLS)
 
@@ -192,7 +193,7 @@ def run_agent(lab, provider, model_id, max_seconds=240, reply_timeout=120):
                               if session is not None and session.interrupted else prompt)
             restored = getattr(lab, 'restored_context', None)
             if restored:
-                attempt_prompt = ("Continuing the same training run after its time limit. The following is your "
+                attempt_prompt = ("Continuing the same training run after a restart. The following is your "
                                   "saved conversation, for context only; do not repeat old tool calls. "
                                   "Use the current request after the record to propose the next policy.\n"
                                   + restored + "\nCURRENT REQUEST:\n" + attempt_prompt)
@@ -274,7 +275,12 @@ def player_spec(value):
     return names.get(model, model), provider, model
 
 
-def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
+def run_tool_demo(output, *args, **kwargs):
+    with training_lock(output):
+        return _run_tool_demo(output, *args, **kwargs)
+
+
+def _run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                   reply_timeout=120, edit_seconds=240, swap_sides=False, paired_games=False,
                   duration_seconds=None, resume_from=None, prepare_agents=False, persistent_sessions=True,
                   zero_initial=False, wait_for_viewer=False, wait_for_start=False, single_reply=False, random_sides=False,
@@ -302,10 +308,17 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
         if resume_from is not None:
             raise ValueError('Choose either continuation or a new run from previous weights.')
         previous_status = json.loads((output / 'demo.json').read_text())
-        if previous_status.get('phase') != 'complete' or not previous_status.get('games'):
-            raise ValueError('Only a completed run can be continued.')
+        requests_pending = any((lab / 'context-requests.json').exists()
+                               for after in editing_rounds(previous_status) for agent in (1, 2)
+                               for lab in lab_directories(output, after, agent))
+        if previous_status.get('phase') == 'awaiting_approval' or (output / 'approval-request.json').exists() or requests_pending:
+            raise ValueError('Training is awaiting approval; a restart cannot bypass it.')
+        if not (output / 'initial.json').exists():
+            raise ValueError('Saved initial policy is unavailable; refusing to reset the run.')
         agents = tuple((a['name'], a['provider'], a['model']) for a in previous_status['agents'])
         seed, max_steps = previous_status['seed'], previous_status['max_steps']
+        reply_timeout = previous_status.get('reply_timeout', reply_timeout)
+        edit_seconds = previous_status.get('edit_seconds', edit_seconds)
         swap_sides, paired_games = previous_status['swap_sides'], previous_status['paired_games']
         random_sides = previous_status.get('random_sides', False)
     else:
@@ -330,12 +343,13 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                   'duration_seconds': duration_seconds}
         status.pop('stop_reason', None)
         status.pop('elapsed_seconds', None)
+        status.pop('error', None)
     publish(output / "demo.json", status)
     sessions = [ProviderSession(provider, model) if persistent_sessions and provider in ("codex", "claude") else None
                 for _, provider, model in agents]
     try:
         if previous_status:
-            current = current_models(output, previous_status)
+            current = current_models(output, previous_status, recover=True)
         else:
             initial = initialize([33, 8, 18], seed=seed, zero=zero_initial)
             save(output / "initial.json", initial)
@@ -369,22 +383,18 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
         if previous_status and random_sides:
             for _ in status['games']:
                 assignment_rng.getrandbits(1)
+        if previous_status and status.get('next_player_agents') and status.get('editing_after_game') == len(status['games']):
+            orders[len(status['games']) + 1] = status['next_player_agents']
+            if random_sides:
+                assignment_rng.getrandbits(1)
         def order_for(number):
             if number not in orders:
                 swapped = bool(assignment_rng.getrandbits(1)) if random_sides else swap_sides and number % 2 == 0
                 orders[number] = [2, 1] if swapped else [1, 2]
             return orders[number]
 
-        def play(number):
-            wait_if_paused()
-            order = order_for(number)
-            directory = game_directory(number)
-            result = match(current[order[0] - 1], current[order[1] - 1], output / directory, max_steps)
-            status["games"].append({"number": number, "directory": directory, "result": result,
-                                    "player_agents": order,
-                                    "edit_after_game": number if not paired_games or number % 2 == 0 else None})
-            if number in (1, 2):
-                status[game_directory(number)] = result
+        def finish_game(entry):
+            number, result, order = entry['number'], entry['result'], entry['player_agents']
             if wait_for_viewer:
                 status.update(phase="playing", viewing_game=number)
             publish(output / "demo.json", status)
@@ -392,12 +402,53 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                 while not (output / f"viewed-{number}").exists():
                     wait_if_paused()
                     time.sleep(0.1)
+            if status['tally']['games'] >= number:
+                return  # A restart must never count a finished game twice.
             if result["winner"] is None:
                 status["tally"]["draws"] += 1
             else:
                 status["tally"]["wins"][order[result["winner"] - 1] - 1] += 1
             status["tally"]["games"] += 1
             publish(output / "demo.json", status)
+
+        def play(number):
+            wait_if_paused()
+            order = order_for(number)
+            directory = game_directory(number)
+            if (output / directory).exists():
+                # An interrupted simulation has no published game entry. Preserve
+                # its partial artifacts before generating the same numbered game.
+                archive = output / 'interrupted-games'
+                archive.mkdir(exist_ok=True)
+                shutil.move(str(output / directory), str(archive / f'{directory}-{time.time_ns()}'))
+            result = match(current[order[0] - 1], current[order[1] - 1], output / directory, max_steps)
+            entry = {"number": number, "directory": directory, "result": result,
+                     "player_agents": order,
+                     "edit_after_game": number if not paired_games or number % 2 == 0 else None}
+            status['games'].append(entry)
+            if number in (1, 2):
+                status[game_directory(number)] = result
+            finish_game(entry)
+
+        def await_start():
+            nonlocal started, deadline
+            status.update(phase='ready', ends_at=None)
+            publish(output / 'demo.json', status)
+            while not (output / 'start').exists():
+                time.sleep(.1)
+            started = time.monotonic()
+            deadline = started + duration_seconds if duration_seconds is not None else None
+            status.update(started_at=time.time(),
+                          ends_at=time.time() + duration_seconds if deadline is not None else None)
+
+        if previous_status and status['games']:
+            if wait_for_start:
+                await_start()
+            for entry in status['games']:
+                if entry['number'] > status['tally']['games']:
+                    finish_game(entry)
+            if paired_games and len(status['games']) % 2:
+                play(len(status['games']) + 1)
 
         if not prepare_agents and not previous_status:
             play(1)
@@ -425,17 +476,40 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                                  "model": model, "status": "waiting"}
                                 for i, (name, provider, model) in enumerate(agents)]
             edit_dir = output if completed_game == 1 else output / f"edit-{completed_game}"
-            if completed_game == 0:
-                labs = [WeightLab(current[i], None, edit_dir / f"lab-{i + 1}", next_order.index(i + 1) + 1, 0) for i in range(2)]
-            else:
+            recovering_round = bool(previous_status and any(lab_directories(output, completed_game, i + 1) for i in range(2)))
+            labs = {}
+            for i in range(2):
+                folders = lab_directories(output, completed_game, i + 1) if recovering_round else []
+                submitted = next((folder for folder in reversed(folders)
+                                  if (folder / 'submitted.json').exists() and (folder / 'submission.json').exists()), None)
+                if submitted:
+                    current[i] = edit_dir / f'player-{i + 1}.json'
+                    if not current[i].exists():
+                        save(current[i], load(submitted / 'submitted.json'))
+                    result = json.loads((submitted / 'submission.json').read_text())
+                    prior[i] = result
+                    status['agents'][i].update(result, status='submitted')
+                    continue
+                if recovering_round and completed_game > 0:
+                    # Do not re-query or apply partial edits from an interrupted
+                    # update. The next played game evaluates the accepted policy.
+                    status['agents'][i].update(status='kept_previous',
+                        note='Update interrupted by restart. Previous policy retained.',
+                        active_sha256=fingerprint(load(current[i])))
+                    continue
+                folder = edit_dir / f'lab-{i + 1}'
+                if folders:
+                    folder = edit_dir / f'lab-{i + 1}-recovery-{len(folders)}'
+                if completed_game == 0:
+                    labs[i] = WeightLab(current[i], None, folder, next_order.index(i + 1) + 1, 0)
+                    continue
                 source_game = completed_game - 1 if paired_games else completed_game
                 source_order = status["games"][source_game - 1]["player_agents"]
-                labs = [WeightLab(current[i], output / game_directory(source_game),
-                                  edit_dir / f"lab-{i + 1}", source_order.index(i + 1) + 1, completed_game, prior[i],
-                                  [(output / game_directory(completed_game), 2 - i, completed_game)] if paired_games else None)
-                        for i in range(2)]
+                labs[i] = WeightLab(current[i], output / game_directory(source_game),
+                                    folder, source_order.index(i + 1) + 1, completed_game, prior[i],
+                                    [(output / game_directory(completed_game), 2 - i, completed_game)] if paired_games else None)
             review_event = threading.Event()
-            for i, lab in enumerate(labs):
+            for i, lab in labs.items():
                 lab.single_reply = single_reply
                 lab.review_event = review_event
                 lab.provider_session = sessions[i]
@@ -443,8 +517,8 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                 lab.restored_context = restored_context[i]
             publish(output / "demo.json", status)
             with ThreadPoolExecutor(max_workers=2) as pool:
-                pending = {pool.submit(run_agent, lab, provider, model, round_budget, min(reply_timeout, round_budget)): index
-                           for index, (lab, (_, provider, model)) in enumerate(zip(labs, agents))}
+                pending = {pool.submit(run_agent, lab, agents[index][1], agents[index][2], round_budget, min(reply_timeout, round_budget)): index
+                           for index, lab in labs.items()}
                 while pending:
                     finished, _ = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
                     for future, index in pending.items():
@@ -479,7 +553,8 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                         except Exception as error:
                             status["agents"][index].update(status="failed", error=str(error))
                     publish(output / "demo.json", status)
-            restored_context = [None, None]
+            for i in labs:
+                restored_context[i] = None
             if review_event.is_set():
                 status.update(phase="awaiting_approval", games_requested=len(status["games"]),
                               elapsed_seconds=time.monotonic() - started)
@@ -487,19 +562,13 @@ def run_tool_demo(output, seed=42, max_steps=1800, games=2, players=None,
                 return status
             if any(agent["status"] == "failed" for agent in status["agents"]):
                 raise ValueError("An agent did not finish the input-test loop. See its saved tool log.")
-            status["edit_rounds"].append({"after_game": completed_game, "agents": status["agents"]})
+            if not any(r['after_game'] == completed_game for r in status['edit_rounds']):
+                status["edit_rounds"].append({"after_game": completed_game, "agents": status["agents"]})
             if wait_for_start and completed_game == 0:
                 # A timeout is acceptable later, but Start requires both initial submissions.
                 if any(agent["status"] != "submitted" for agent in status["agents"]):
                     raise ValueError("Initial policies were not submitted by both agents. Reset to retry.")
-                status.update(phase="ready", ends_at=None)
-                publish(output / "demo.json", status)
-                while not (output / "start").exists():
-                    time.sleep(0.1)
-                started = time.monotonic()
-                deadline = started + duration_seconds if duration_seconds is not None else None
-                status.update(started_at=time.time(),
-                              ends_at=time.time() + duration_seconds if deadline is not None else None)
+                await_start()
             status["phase"] = "rematch"
             publish(output / "demo.json", status)
             play(completed_game + 1)
@@ -531,7 +600,7 @@ if __name__ == "__main__":
     parser.add_argument("--games", type=int, default=None, choices=range(2, 10))
     parser.add_argument("--duration-seconds", type=float, help="Wall-clock training budget; defaults to 600 unless --games is supplied.")
     parser.add_argument("--resume-from", type=Path, help="Carry the same agents’ last played weights into this run.")
-    parser.add_argument("--continue-run", action="store_true", help="Continue a completed run in place, retaining policies, games, and saved agent context.")
+    parser.add_argument("--continue-run", action="store_true", help="Resume a saved run in place, retaining policies, games, and saved agent context.")
     parser.add_argument("--player-1", default="codex:gpt-6-astra")
     parser.add_argument("--player-2", default="claude:claude-opus-5-5")
     parser.add_argument("--reply-timeout", type=float, default=120)

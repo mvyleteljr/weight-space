@@ -106,6 +106,7 @@ class ReplayStore:
 
     def policy_history(self):
         from weight_space.network import architecture, load
+        from weight_space.checkpoint import lab_directories
         status = self.status()
         rounds = sorted({entry["after_game"] for entry in status.get("edit_rounds", [])}
                         | ({status["editing_after_game"]} if status.get("editing_after_game") is not None else set()))
@@ -114,57 +115,58 @@ class ReplayStore:
             snapshots = []
             requests = []
             for after in rounds:
-                folder = (self.directory if after == 1 else self.directory / f"edit-{after}") / f"lab-{index}"
-                request_path = folder / "context-requests.json"
-                if request_path.exists():
-                    requests.extend(json.loads(request_path.read_text()))
-                start = folder / "revision-0.json"
-                if not start.exists():
-                    continue
-                round_agents = next((r["agents"] for r in status.get("edit_rounds", []) if r["after_game"] == after), status["agents"])
-                outcome = round_agents[index-1].get("status", "waiting")
-                summaries = {}
-                def summary(revision):
-                    if revision not in summaries:
-                        path = folder / f"revision-{revision}.json"
-                        # Revision files are immutable after publication.
-                        cache_key = (str(path), path.stat().st_mtime_ns)
-                        with self.lock:
-                            if cache_key not in self.cache:
-                                self.cache[cache_key] = architecture(load(path), include_connections=True)
-                            summaries[revision] = self.cache[cache_key]
-                    return summaries[revision]
-                revision = 0
-                snapshots.append({"id": f"{after}:start", "after_game": after, "turn": 0,
-                                  "revision": 0, "architecture": summary(0), "stage": "starting policy",
-                                  "note": "Policy carried into this editing round.", "calls": []})
-                path = folder / "replies.json"
-                replies = json.loads(path.read_text()) if path.exists() else []
-                for reply in replies:
-                    calls = reply.get("calls", [])
-                    for ci, call in enumerate(calls or [{}]):
-                        result = call.get("result") or {}
-                        result = result if isinstance(result, dict) else {}
-                        value = result.get("revision")
-                        if type(value) is int and value >= 0 and (folder / f"revision-{value}.json").exists():
-                            revision = value
-                        tool = call.get("tool", "reply")
-                        stage = "candidate"
-                        if tool == "submit" and result and "error" not in result:
-                            stage = "submitted"
-                        elif tool in ("test_inputs", "test_sequence") and "cases" in result:
-                            stage = "tested candidate"
-                        if outcome in ("kept_previous", "failed", "stopped") and stage != "submitted":
-                            stage = "not adopted" if revision else "starting policy"
-                        args = call.get("arguments", {})
-                        snapshots.append({"id": f"{after}:{reply['turn']}:{ci}", "after_game": after,
-                            "turn": reply["turn"], "revision": revision, "architecture": summary(revision),
-                            "stage": stage, "note": reply.get("note", ""),
-                            "calls": [{"tool": tool, "reason": args.get("reason"),
-                                       "updates": len(args.get("updates", [])), "error": result.get("error"),
-                                       "done": call.get("result") is not None,
-                                       "tests": [{key: c.get(key) for key in ("action", "expected_action", "matches_expected")}
-                                                 for c in result.get("cases", [])]}]})
+                for attempt, folder in enumerate(lab_directories(self.directory, after, index)):
+                    prefix = str(after) if not attempt else f"{after}:recovery-{attempt}"
+                    request_path = folder / "context-requests.json"
+                    if request_path.exists():
+                        requests.extend(json.loads(request_path.read_text()))
+                    start = folder / "revision-0.json"
+                    if not start.exists():
+                        continue
+                    round_agents = next((r["agents"] for r in status.get("edit_rounds", []) if r["after_game"] == after), status["agents"])
+                    outcome = round_agents[index-1].get("status", "waiting")
+                    summaries = {}
+                    def summary(revision):
+                        if revision not in summaries:
+                            path = folder / f"revision-{revision}.json"
+                            # Revision files are immutable after publication.
+                            cache_key = (str(path), path.stat().st_mtime_ns)
+                            with self.lock:
+                                if cache_key not in self.cache:
+                                    self.cache[cache_key] = architecture(load(path), include_connections=True)
+                                summaries[revision] = self.cache[cache_key]
+                        return summaries[revision]
+                    revision = 0
+                    snapshots.append({"id": f"{prefix}:start", "after_game": after, "turn": 0,
+                                      "lab_directory": str(folder.relative_to(self.directory)), "revision": 0, "architecture": summary(0), "stage": "starting policy",
+                                      "note": "Policy carried into this editing round.", "calls": []})
+                    path = folder / "replies.json"
+                    replies = json.loads(path.read_text()) if path.exists() else []
+                    for reply in replies:
+                        calls = reply.get("calls", [])
+                        for ci, call in enumerate(calls or [{}]):
+                            result = call.get("result") or {}
+                            result = result if isinstance(result, dict) else {}
+                            value = result.get("revision")
+                            if type(value) is int and value >= 0 and (folder / f"revision-{value}.json").exists():
+                                revision = value
+                            tool = call.get("tool", "reply")
+                            stage = "candidate"
+                            if tool == "submit" and result and "error" not in result:
+                                stage = "submitted"
+                            elif tool in ("test_inputs", "test_sequence") and "cases" in result:
+                                stage = "tested candidate"
+                            if outcome in ("kept_previous", "failed", "stopped") and stage != "submitted":
+                                stage = "not adopted" if revision else "starting policy"
+                            args = call.get("arguments", {})
+                            snapshots.append({"id": f"{prefix}:{reply['turn']}:{ci}", "after_game": after,
+                                "lab_directory": str(folder.relative_to(self.directory)), "turn": reply["turn"], "revision": revision, "architecture": summary(revision),
+                                "stage": stage, "note": reply.get("note", ""),
+                                "calls": [{"tool": tool, "reason": args.get("reason"),
+                                           "updates": len(args.get("updates", [])), "error": result.get("error"),
+                                           "done": call.get("result") is not None,
+                                           "tests": [{key: c.get(key) for key in ("action", "expected_action", "matches_expected")}
+                                                     for c in result.get("cases", [])]}]})
             if not snapshots:
                 path = self.directory / f"initial-agent-{index}.json"
                 if not path.exists():
@@ -193,7 +195,8 @@ class ReplayStore:
         else:
             after = snapshot['after_game']
             folder = self.directory if after == 1 else self.directory / f'edit-{after}'
-            path = folder / f'lab-{agent_index+1}' / f'revision-{snapshot["revision"]}.json'
+            lab = self.directory / snapshot["lab_directory"] if "lab_directory" in snapshot else folder / f'lab-{agent_index+1}'
+            path = lab / f'revision-{snapshot["revision"]}.json'
         from weight_space.network import load
         return load(path)
 
@@ -427,14 +430,11 @@ class SpectatorHandler(BaseHTTPRequestHandler):
 
 
 def configure_runs(server, repo, *, allow_new_runs=False, demo=None):
-    """Cold training launches always reset; saved-run selection is read-only."""
+    """Reopen the selected training run; --demo remains a read-only selector."""
     server.run_manager = None
     if allow_new_runs:
         from streaming.run_control import RunManager
-        # Never restore --demo, WEIGHT_SPACE_DEMO, or .frontend-current.json into
-        # a new training process. Reset and cold launch share zero initialization.
-        server.run_manager = RunManager(repo)
-        server.run_manager.prepare()
+        server.run_manager = RunManager.reopen(repo)
         server.replay_store = ReplayStore(server.run_manager.directory)
     else:
         server.replay_store = ReplayStore(demo) if demo else None
@@ -448,7 +448,7 @@ if __name__ == "__main__":
     parser.add_argument("--demo", type=Path, default=os.environ.get("WEIGHT_SPACE_DEMO"),
                         help="Saved run for read-only viewing; ignored with --allow-new-runs.")
     parser.add_argument("--assets", type=Path, default=WEB.parent.parent / "Street_Fighter/assets/images")
-    parser.add_argument("--allow-new-runs", action="store_true", help="Start fresh zeroed Astra/Opus 5.5 policies and enable local training controls.")
+    parser.add_argument("--allow-new-runs", action="store_true", help="Restore saved training and enable local controls; Reset starts fresh.")
     args = parser.parse_args()
     if args.allow_new_runs and args.bind not in ("127.0.0.1", "localhost"):
         parser.error("Run creation requires a loopback bind address.")
@@ -464,9 +464,15 @@ if __name__ == "__main__":
         sys.path.insert(0, str(WEB.parent.parent))
     configure_runs(server, WEB.parent.parent, allow_new_runs=args.allow_new_runs, demo=args.demo)
     print(f"Spectator page: http://{args.bind}:{args.port}", flush=True)
+    import signal
+    def stop_server(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, stop_server)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
+        if server.run_manager is not None:
+            server.run_manager.close()

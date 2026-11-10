@@ -45,7 +45,7 @@ class TrainingFlowTests(unittest.TestCase):
             self.assertNotIn('saved conversation', (root/'edit-2/lab-1/turn-1.prompt.txt').read_text())
             final['phase']='awaiting_approval'
             (root/'demo.json').write_text(json.dumps(final))
-            with self.assertRaisesRegex(ValueError,'Only a completed'):
+            with self.assertRaisesRegex(ValueError,'awaiting approval'):
                 run_tool_demo(root,continue_run=True)
 
     def test_one_provider_query_per_agent_for_initialization_and_each_update(self):

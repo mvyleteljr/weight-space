@@ -16,6 +16,27 @@ class RunBusyError(Exception):
 
 
 class RunManager:
+    @classmethod
+    def reopen(cls, repo):
+        """Restore the selected run; only first launch and Reset create a new one."""
+        runs = Path(repo).resolve() / 'runs'
+        pointer = runs / '.frontend-current.json'
+        if not pointer.exists():
+            manager = cls(repo)
+            manager.prepare()
+            return manager
+        name = json.loads(pointer.read_text())['run']
+        directory = (runs / name).resolve()
+        if directory.parent != runs or not (directory / 'demo.json').is_file():
+            raise ValueError('Saved run is unavailable; refusing to replace its policies with a fresh run.')
+        from weight_space.checkpoint import training_lock
+        with training_lock(directory):
+            pass
+        manager = cls(repo, directory)
+        if manager.status().get('phase') != 'awaiting_approval':
+            manager._launch_continuation(manager.status(), wait_for_start=True)
+        return manager
+
     def __init__(self, repo, initial=None):
         self.repo = Path(repo).resolve()
         self.runs = self.repo / "runs"
@@ -153,11 +174,17 @@ class RunManager:
     def _continue(self, status):
         if not self.can_start():
             raise RunBusyError('The trainer is still finishing.')
+        return self._launch_continuation(status)
+
+    def _launch_continuation(self, status, *, wait_for_start=False):
         uv = shutil.which('uv')
         if uv is None:
             raise ValueError('uv is unavailable on the host.')
         command = [uv, 'run', '--project', str(self.repo), 'python', '-m', 'weight_space.tool_loop',
                    '--output', str(self.directory), '--continue-run', '--duration-seconds', '600', '--wait-for-viewer']
+        if wait_for_start:
+            command.append('--wait-for-start')
+            (self.directory / 'start').unlink(missing_ok=True)
         logs = self.runs / '.launcher-logs'
         logs.mkdir(exist_ok=True)
         (self.directory / 'paused').unlink(missing_ok=True)
@@ -167,6 +194,18 @@ class RunManager:
         self.continuing = True
         threading.Thread(target=self._watch, args=(self.process, self.directory, status), daemon=True).start()
         return self.directory
+
+    def close(self):
+        """Stop this server's trainer; keep its checkpoint and every saved artifact."""
+        with self.lock:
+            process, self.process = self.process, None
+            if process is not None and process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
 
     def prepare(self, games=6):
         if type(games) is not int or not 2 <= games <= 9:

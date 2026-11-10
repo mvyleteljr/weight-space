@@ -213,7 +213,6 @@ function updatePolicyActivity(index) {
     if (sample === view.previous) continue;
     view.previous = sample;
     view.svg.updateActivity(sample);
-    view.legend.textContent = sample ? `Requested: ${actionLabels[sample.action]}${sample.motion ? ` · motion ${sample.motion}` : ''}` : 'Weights · no current decision';
   }
   refreshNetworkTooltip();
 }
@@ -270,11 +269,7 @@ function renderPolicies(data) {
     heading.append(nav);
     const diagram = element('div', undefined, 'policy-diagram'), svg = architectureDiagram(arch);
     diagram.append(svg); card.append(diagram);
-    const legend = element('p', 'Weights · no current decision', 'network-legend');
-    legend.title = 'Inputs and hidden neurons: brightness = magnitude / layer maximum. Actions: signed scores from darkest (lowest) to brightest (highest). Line brightness = |source × weight| / connection-layer maximum during play; weights otherwise. Hover for signed values. The larger outlined output is the requested action; collisions, knockback and recovery can override movement.';
-    card.append(legend);
-    activityViews.push({svg, legend, slot, live, previous:undefined});
-    card.append(element('p', `${arch.parameters.toLocaleString()} parameters · ${arch.memory_size} memory values`, 'policy-stats'));
+    activityViews.push({svg, slot, live, previous:undefined});
     const log = element('div', undefined, 'reply-log'); log.tabIndex = 0;
     log.setAttribute('aria-label', `${agent.name} public notes for selected update`);
     log.append(element('p', snapshot.note));

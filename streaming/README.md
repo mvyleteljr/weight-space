@@ -16,18 +16,25 @@ docker compose -f streaming/compose.yml stop spectator
 uv run python -m streaming.server --allow-new-runs --port 8081
 ```
 
-Open http://127.0.0.1:8081. On every server launch or **Reset**, both agents start
-with identical zeroed 33–8–18 policies and new conversations. Prior weights,
-architectures, recurrent state, action feedback, scores, and game context are not
-restored. The agents can initialize weights or redesign their networks, then
-**Start training** becomes available. Click it to begin the 10-minute session.
-Every game is shown before the next agent update. Characters are assigned randomly.
-Saved runs remain archived in `runs/`.
+Open http://127.0.0.1:8081. Server restarts reopen the current run, preserving its
+accepted networks, game history, scores, prompts, and model responses. Click
+**Start training** to continue. Each agent receives its own saved conversation
+on its first update after restart, followed by incremental updates.
 
-Only one run can be active. The launcher uses a fixed uv command and requires a local address, same-origin
-request, and a session token. CLI credentials stay on the host. Docker playback
-does not enable this launcher. With `--allow-new-runs`, saved `--demo` selections,
-`WEIGHT_SPACE_DEMO`, and the last-run pointer cannot restore an old training run.
+Only the first launch or **Reset** creates zeroed 33–8–18 policies and fresh
+conversations. The agents initialize their policies before **Start training**
+becomes available. Every game is shown before the next update, with characters
+assigned randomly. An interrupted game can be shown again, but is scored only
+once. Incomplete updates keep the last accepted weights; interrupted initial
+setup retries only the missing agent. Earlier logs remain available.
+
+Only one trainer can write to a run. The launcher uses a fixed uv command and
+requires a local address, same-origin request, and a session token. CLI credentials
+stay on the host. Docker playback does not enable this launcher. With
+`--allow-new-runs`, the run is selected by `runs/.frontend-current.json`;
+`--demo` and `WEIGHT_SPACE_DEMO` remain read-only viewing options. A missing saved
+run produces an error instead of silently resetting. **Reset** starts a new run
+and excludes the archived run's context from the new agents.
 
 ## View existing runs
 
