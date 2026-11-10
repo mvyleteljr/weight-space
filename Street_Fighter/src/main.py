@@ -12,12 +12,12 @@ from pathlib import Path
 
 if __package__:
     from .fighter import Fighter
-    from .arena import Arena, encode_action
+    from .arena import Arena, encode_action, ending_states
     from .streaming import FramePublisher, StreamConfig
     from .scripted_demo import scripted_actions
 else:
     from fighter import Fighter
-    from arena import Arena, encode_action
+    from arena import Arena, encode_action, ending_states
     from streaming import FramePublisher, StreamConfig
     from scripted_demo import scripted_actions
 
@@ -103,8 +103,8 @@ if __name__ == "__main__":
     # Load Assets
     bg_image = pygame.image.load(resource_path("assets/images/bg1.jpg")).convert()
     victory_img = pygame.image.load(resource_path("assets/images/victory.png")).convert_alpha()
-    warrior_victory_img = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
-    wizard_victory_img = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
+    warrior_victory_img = pygame.image.load(resource_path("assets/images/grimes-sprites-large.png")).convert_alpha()
+    wizard_victory_img = pygame.image.load(resource_path("assets/images/shoggoth-sprites-large.png")).convert_alpha()
 
     # Fonts
     menu_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 50)
@@ -123,21 +123,22 @@ if __name__ == "__main__":
     magic_fx.set_volume(0.75)
 
     # Load Fighter Spritesheets
-    warrior_sheet = pygame.image.load(resource_path("assets/images/warrior.png")).convert_alpha()
-    wizard_sheet = pygame.image.load(resource_path("assets/images/wizard.png")).convert_alpha()
+    warrior_sheet = pygame.image.load(resource_path("assets/images/grimes-sprites-large.png")).convert_alpha()
+    wizard_sheet = pygame.image.load(resource_path("assets/images/shoggoth-sprites-large.png")).convert_alpha()
 
     # Define Animation Steps
     WARRIOR_ANIMATION_STEPS = [10, 8, 1, 7, 7, 3, 7]
     WIZARD_ANIMATION_STEPS = [8, 8, 1, 8, 8, 3, 7]
 
     # Fighter Data
-    WARRIOR_SIZE = 162
-    WARRIOR_SCALE = 4
-    WARRIOR_OFFSET = [72, 46]
+    # Preserve the 648px rendered frame and existing arena alignment.
+    WARRIOR_SIZE = 500
+    WARRIOR_SCALE = 648 / WARRIOR_SIZE
+    WARRIOR_OFFSET = [144 * WARRIOR_SIZE / 324, 92 * WARRIOR_SIZE / 324]
     WARRIOR_DATA = [WARRIOR_SIZE, WARRIOR_SCALE, WARRIOR_OFFSET]
-    WIZARD_SIZE = 250
-    WIZARD_SCALE = 3
-    WIZARD_OFFSET = [112, 97]
+    WIZARD_SIZE = 500
+    WIZARD_SCALE = 1.5
+    WIZARD_OFFSET = [224, 194]
     WIZARD_DATA = [WIZARD_SIZE, WIZARD_SCALE, WIZARD_OFFSET]
 
     # Game Variables
@@ -315,20 +316,20 @@ def controls_screen():
         controls_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 35)
         small_font = pygame.font.Font(resource_path("assets/fonts/turok.ttf"), 25)
 
-        draw_text("P1 - WARRIOR", controls_font, BLUE, 100, 150)
+        draw_text("P1 - GRIMES", controls_font, BLUE, 100, 150)
         draw_text("A / D - Move left / right", small_font, WHITE, 100, 200)
         draw_text("W - Jump", small_font, WHITE, 100, 240)
         draw_text("R - Attack 1", small_font, RED, 100, 280)
         draw_text("T - Attack 2", small_font, RED, 100, 320)
 
-        draw_text("P2 - WIZARD", controls_font, (255, 100, 0), 500, 150)
+        draw_text("P2 - SHOGGOTH", controls_font, (255, 100, 0), 500, 150)
         draw_text("Left / Right arrows - Move", small_font, WHITE, 500, 200)
         draw_text("Up arrow - Jump", small_font, WHITE, 500, 240)
         draw_text("K - Attack 1", small_font, RED, 500, 280)
         draw_text("L - Attack 2", small_font, RED, 500, 320)
 
         draw_text("Two players share one keyboard", small_font, YELLOW, 100, 410)
-        draw_text("60 seconds. Highest health wins at timeout.", small_font, WHITE, 100, 450)
+        draw_text("60 seconds. Most damage dealt wins at timeout.", small_font, WHITE, 100, 450)
 
         # Return button
         return_button = draw_button("RETURN TO MAIN MENU", menu_font, BLACK, GREEN, SCREEN_WIDTH // 2 - 220, 550, 500, 50)
@@ -396,6 +397,7 @@ def game_loop():
     global score
     reset_game()
     round_over = False
+    ending = iter(())
     winner_img = None
     game_started = True
 
@@ -431,16 +433,27 @@ def game_loop():
                 (fighter_1 if player == 1 else fighter_2).attack_sound.play()
             if result["done"]:
                 round_over = True
+                ending = iter(ending_states(result["state"]))
                 if result["winner"] is not None:
                     score[result["winner"] - 1] += 1
                 winner_img = (warrior_victory_img if result["winner"] == 1 else
                               wizard_victory_img if result["winner"] == 2 else None)
         else:
-            victory_screen(winner_img)
-            return
+            state = next(ending, None)
+            if state is None:
+                victory_screen(winner_img)
+                return
+            for fighter, data in zip(arena.fighters, state["fighters"]):
+                vars(fighter).update(data)
 
-        fighter_1.draw(screen)
+        for cube in arena.state().get("powerups", []):
+            if cube["available"]:
+                color = (70,190,230) if cube["player"] == 1 else (215,115,230)
+                rect = pygame.Rect(cube["x"],cube["y"],cube["size"],cube["size"])
+                pygame.draw.rect(screen,color,rect)
+                pygame.draw.rect(screen,(255,255,255),rect,2)
         fighter_2.draw(screen)
+        fighter_1.draw(screen)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -460,8 +473,8 @@ if __name__ == "__main__":
         for _ in range(10):
             arena.step([0, 0])
             draw_bg(bg_image, is_game_started=True)
-            fighter_1.draw(screen)
             fighter_2.draw(screen)
+            fighter_1.draw(screen)
         draw_bg(bg_image)
         pygame.quit()
         print("Game display smoke test passed.")

@@ -1,4 +1,5 @@
 import json
+import gzip
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import tempfile
@@ -17,7 +18,7 @@ class FrontendTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        save(self.root / 'model.json', initialize([31, 8, 18]))
+        save(self.root / 'model.json', initialize([33, 8, 18]))
         result = match(self.root / 'model.json', self.root / 'model.json', self.root / 'after', 3)
         self.status = {'games': [{'number': 2, 'result': result, 'player_agents': [2, 1]}],
                        'agents': [{'name': 'Astra'}, {'name': 'Fable'}],
@@ -31,7 +32,12 @@ class FrontendTests(unittest.TestCase):
         self.assertEqual(replay['fps'], 60)
         self.assertEqual([f['step'] for f in replay['frames']], [1, 2, 3])
         self.assertEqual([f['health'] for f in replay['frames'][-1]['fighters']], replay['result']['health'])
+        self.assertEqual([f['damage_dealt'] for f in replay['frames'][-1]['fighters']], replay['result']['damage_dealt'])
         self.assertNotIn('observations', replay['frames'][0])
+        self.assertEqual(replay['decision_frames'],3)
+        self.assertEqual(len(replay['activity']),3)
+        self.assertEqual(replay['activity_stride'],1)
+        self.assertEqual(replay['networks'][0]['inputs'],33)
         with self.assertRaises(ValueError):
             self.store.game(1)
 
@@ -40,13 +46,37 @@ class FrontendTests(unittest.TestCase):
         lab = self.root / 'edit-2/lab-1'; lab.mkdir(parents=True)
         (lab / 'replies.json').write_text(json.dumps([{'turn': 1, 'note': 'Test a jump.', 'calls': [
             {'tool': 'test_inputs', 'arguments': {}, 'result': {'revision': 1, 'cases': [
-                {'action': 4, 'expected_action': 4, 'matches_expected': True, 'inputs': [0]*31}]}}]}]))
+                {'action': 4, 'expected_action': 4, 'matches_expected': True, 'inputs': [0]*33}]}}]}]))
         notes = self.store.replies(2)['agents'][0]['replies']
         self.assertEqual(notes[0]['note'], 'Test a jump.')
         self.assertTrue(notes[0]['calls'][0]['tests'][0]['matches_expected'])
         self.assertNotIn('inputs', notes[0]['calls'][0]['tests'][0])
         with self.assertRaises(ValueError):
             self.store.replies(-1)
+
+    def test_knockout_playback_appends_death_without_changing_recorded_game(self):
+        path=self.root/'after/steps.jsonl'
+        rows=[json.loads(line) for line in path.read_text().splitlines()]
+        rows[-1]['state'].update(done=True,reason='knockout',winner=2)
+        rows[-1]['state']['fighters'][0].update(health=0,alive=False,action=6,frame_index=0,animation_tick=1)
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        saved=path.read_bytes()
+        replay=self.store.game(2)
+        self.assertGreaterEqual(len(replay['frames']),23)  # may also finish an in-flight jump
+        self.assertFalse(replay['frames'][2]['ending_complete'])
+        self.assertTrue(replay['frames'][-1]['ending_complete'])
+        self.assertEqual(replay['frames'][-1]['fighters'][0]['frame_index'],6)
+        self.assertEqual(path.read_bytes(),saved)
+
+    def test_context_requests_visible_even_without_a_finished_reply(self):
+        folder = self.root / 'edit-2/lab-1'; folder.mkdir(parents=True)
+        save(folder / 'revision-0.json', initialize([33, 8, 18]))
+        requests = [{'after_game': 2, 'request': '<script>Need collision events</script>',
+                     'reason': 'Understand blocked movement.', 'status': 'requested', 'id': 1}]
+        (folder / 'context-requests.json').write_text(json.dumps(requests))
+        history = self.store.policy_history()
+        self.assertEqual(history['agents'][0]['context_requests'], requests)
+        self.assertEqual(history['agents'][1]['context_requests'], [])
 
     def test_http_routes_are_read_only_and_do_not_serve_arbitrary_files(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), SpectatorHandler)
@@ -55,8 +85,47 @@ class FrontendTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         base = f'http://127.0.0.1:{server.server_port}'
         try:
+            (self.root / 'bg1.jpg').write_bytes(b'static-background')
+            with urlopen(base + '/assets/background.jpg') as response:
+                self.assertEqual(response.read(), b'static-background')
+                self.assertEqual(response.headers['Content-Type'], 'image/jpeg')
+            (self.root / 'anthropic-church-animated-1000x600.apng').write_bytes(b'animated-background')
+            with urlopen(base + '/assets/background.jpg') as response:
+                self.assertEqual(response.read(), b'animated-background')
+                self.assertEqual(response.headers['Content-Type'], 'image/png')
+            (self.root / 'anthropic-church-animated-1000x600.apng').unlink()
+            with urlopen(base + '/assets/background.jpg') as response:
+                self.assertEqual(response.read(), b'static-background')
             with urlopen(base + '/api/run') as response:
                 self.assertEqual(json.load(response)['demo']['games'][0]['number'], 2)
+            with urlopen(base + '/api/policy-history') as response:
+                self.assertEqual(len(json.load(response)['agents']), 2)
+            # Timed runs can exceed nine games.
+            match(self.root / 'model.json', self.root / 'model.json', self.root / 'game-10', 1)
+            self.status['games'].append({'number': 10, 'result': {}, 'player_agents': [1, 2]})
+            (self.root / 'demo.json').write_text(json.dumps(self.status))
+            with urlopen(base + '/api/games/10') as response:
+                self.assertEqual(json.load(response)['number'], 10)
+            with urlopen(Request(base+'/api/games/2',headers={'Accept-Encoding':'gzip'})) as response:
+                self.assertEqual(response.headers['Content-Encoding'],'gzip')
+                game=json.loads(gzip.decompress(response.read()))
+                self.assertEqual(game['player_agents'],[2,1])
+                self.assertEqual(len(game['activity'][0]),2)
+            audio=self.root/'after/spectator-audio-v1.wav'
+            audio.write_bytes(b'RIFF'+bytes(range(100)))
+            url=base+'/api/games/2/audio.wav?run='+self.root.name
+            with urlopen(Request(url,headers={'Range':'bytes=0-3'})) as response:
+                self.assertEqual(response.status,206)
+                self.assertEqual(response.read(),b'RIFF')
+                self.assertEqual(response.headers['Content-Range'],'bytes 0-3/104')
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(url,headers={'Range':'bytes=1000-'}))
+            self.assertEqual(error.exception.code,416)
+            error.exception.close()
+            with self.assertRaises(HTTPError) as error:
+                urlopen(base+'/api/games/2/audio.wav?run=old-run')
+            self.assertEqual(error.exception.code,409)
+            error.exception.close()
             for path in ('/.env', '/api/games/../../.env', '/assets/../model.json', '/api/replies?after=999'):
                 with self.assertRaises(HTTPError) as error:
                     urlopen(base + path)

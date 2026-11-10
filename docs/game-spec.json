@@ -1,117 +1,10 @@
 {
-  "actions": [
-    {
-      "attack": 0,
-      "id": 0,
-      "jump": false,
-      "move": 0
-    },
-    {
-      "attack": 0,
-      "id": 1,
-      "jump": false,
-      "move": -1
-    },
-    {
-      "attack": 1,
-      "id": 2,
-      "jump": false,
-      "move": -1
-    },
-    {
-      "attack": 2,
-      "id": 3,
-      "jump": false,
-      "move": -1
-    },
-    {
-      "attack": 0,
-      "id": 4,
-      "jump": true,
-      "move": -1
-    },
-    {
-      "attack": 1,
-      "id": 5,
-      "jump": true,
-      "move": -1
-    },
-    {
-      "attack": 2,
-      "id": 6,
-      "jump": true,
-      "move": -1
-    },
-    {
-      "attack": 1,
-      "id": 7,
-      "jump": false,
-      "move": 0
-    },
-    {
-      "attack": 2,
-      "id": 8,
-      "jump": false,
-      "move": 0
-    },
-    {
-      "attack": 0,
-      "id": 9,
-      "jump": true,
-      "move": 0
-    },
-    {
-      "attack": 1,
-      "id": 10,
-      "jump": true,
-      "move": 0
-    },
-    {
-      "attack": 2,
-      "id": 11,
-      "jump": true,
-      "move": 0
-    },
-    {
-      "attack": 0,
-      "id": 12,
-      "jump": false,
-      "move": 1
-    },
-    {
-      "attack": 1,
-      "id": 13,
-      "jump": false,
-      "move": 1
-    },
-    {
-      "attack": 2,
-      "id": 14,
-      "jump": false,
-      "move": 1
-    },
-    {
-      "attack": 0,
-      "id": 15,
-      "jump": true,
-      "move": 1
-    },
-    {
-      "attack": 1,
-      "id": 16,
-      "jump": true,
-      "move": 1
-    },
-    {
-      "attack": 2,
-      "id": 17,
-      "jump": true,
-      "move": 1
-    }
-  ],
-  "default_max_steps": 3600,
+  "version": "street-fighter-v3",
   "fps": 60,
+  "width": 1000,
   "height": 600,
+  "default_max_steps": 3600,
+  "observation_size": 33,
   "observation_names": [
     "self.x/width",
     "self.y/height",
@@ -143,27 +36,166 @@
     "opponent.character",
     "relative_x/width",
     "relative_y/height",
-    "time_remaining"
+    "time_remaining",
+    "self.cube_available",
+    "opponent.cube_available"
   ],
-  "observation_size": 31,
-  "output_rule": "argmax; first index wins a tie",
   "output_size": 18,
+  "output_rule": "argmax; first index wins a tie",
   "player_order": [
     1,
     2
   ],
   "rules": [
-    "Fighters have no body collision. They can overlap and move through each other.",
-    "Facing updates toward the opponent after movement, including after crossing sides.",
-    "Movement, jump, and attack can be combined. Horizontal movement also works in the air.",
+    "A knockout wins immediately. At timeout, more cumulative damage dealt wins; equal damage is a draw. Count actual HP removed before healing, excluding overkill. Healing never reduces damage points.",
+    "Each character has one full-health cube at the opposite edge; only its owner collects it by body contact, even at full health. It does not respawn. Collection occurs after damage and cannot revive a knockout.",
+    "Solid body regions prevent walking through opponents. Vertical clearance allows jumping over them.",
+    "Grimes turns immediately; Shoggoth waits 12 ticks after a side change and does not turn during an attack.",
+    "Movement, jump, and attack can be combined. Grimes jump speed is -42 and air speed is 14; Shoggoth uses -36 and 10. Shoggoth attack 1 knocks targets back with a 16px impulse decaying by 2px per tick.",
     "A jump can start only on the ground. Holding jump can start another jump after landing.",
     "There is no block, guard, parry, crouch, dash, or invulnerability action.",
     "Defense requires avoiding overlap with the attack area. Jumping does not grant invulnerability.",
-    "An attack checks for a hit only on the step when it starts, after movement and facing updates.",
-    "An attacking flag in the next observation describes an attack that has already made its hit check.",
-    "New movement, jump, and attack inputs are ignored while attacking or in hit recovery. Gravity continues.",
-    "Both attack types use the same hit area and damage. Both fighters can hit in the same step."
+    "Attacks hit only during visible contact frames: Grimes attacks 1/2 and Shoggoth attack 2 on frames 4-5; Shoggoth attack 1 on frames 3-5.",
+    "Sprite-aligned attack areas require 2 horizontal and 4 vertical pixels of body overlap for Grimes blades, or 12 horizontal and 10 vertical pixels for Shoggoth arms. Each swing hits at most once.",
+    "An attacking flag includes windup, contact, and recovery. A hit cancels the target attack unless both hits occur on the same step.",
+    "New movement, jump, and attack inputs are ignored while attacking, in hit reaction, or while attack_cooldown is positive. Gravity continues.",
+    "Completed attack animations start recovery: Grimes 12/18 frames for attacks 1/2; Shoggoth 30/42 frames. An interrupted attack starts its recovery when hit; hit reaction does not clear recovery.",
+    "Grimes attacks 1/2 deal 10/12 damage; Shoggoth attacks 1/2 deal 14/18. Both fighters can hit in the same step."
   ],
-  "version": "street-fighter-v1",
-  "width": 1000
+  "attack_balance": [
+    {
+      "player": 1,
+      "attack": 1,
+      "damage": 10,
+      "recovery_frames": 12
+    },
+    {
+      "player": 1,
+      "attack": 2,
+      "damage": 12,
+      "recovery_frames": 18
+    },
+    {
+      "player": 2,
+      "attack": 1,
+      "damage": 14,
+      "recovery_frames": 30
+    },
+    {
+      "player": 2,
+      "attack": 2,
+      "damage": 18,
+      "recovery_frames": 42
+    }
+  ],
+  "actions": [
+    {
+      "id": 0,
+      "move": 0,
+      "jump": false,
+      "attack": 0
+    },
+    {
+      "id": 1,
+      "move": -1,
+      "jump": false,
+      "attack": 0
+    },
+    {
+      "id": 2,
+      "move": -1,
+      "jump": false,
+      "attack": 1
+    },
+    {
+      "id": 3,
+      "move": -1,
+      "jump": false,
+      "attack": 2
+    },
+    {
+      "id": 4,
+      "move": -1,
+      "jump": true,
+      "attack": 0
+    },
+    {
+      "id": 5,
+      "move": -1,
+      "jump": true,
+      "attack": 1
+    },
+    {
+      "id": 6,
+      "move": -1,
+      "jump": true,
+      "attack": 2
+    },
+    {
+      "id": 7,
+      "move": 0,
+      "jump": false,
+      "attack": 1
+    },
+    {
+      "id": 8,
+      "move": 0,
+      "jump": false,
+      "attack": 2
+    },
+    {
+      "id": 9,
+      "move": 0,
+      "jump": true,
+      "attack": 0
+    },
+    {
+      "id": 10,
+      "move": 0,
+      "jump": true,
+      "attack": 1
+    },
+    {
+      "id": 11,
+      "move": 0,
+      "jump": true,
+      "attack": 2
+    },
+    {
+      "id": 12,
+      "move": 1,
+      "jump": false,
+      "attack": 0
+    },
+    {
+      "id": 13,
+      "move": 1,
+      "jump": false,
+      "attack": 1
+    },
+    {
+      "id": 14,
+      "move": 1,
+      "jump": false,
+      "attack": 2
+    },
+    {
+      "id": 15,
+      "move": 1,
+      "jump": true,
+      "attack": 0
+    },
+    {
+      "id": 16,
+      "move": 1,
+      "jump": true,
+      "attack": 1
+    },
+    {
+      "id": 17,
+      "move": 1,
+      "jump": true,
+      "attack": 2
+    }
+  ]
 }

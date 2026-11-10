@@ -2,7 +2,6 @@
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import inspect
 import json
 from pathlib import Path
 import time
@@ -13,6 +12,7 @@ from .network import encode, fingerprint, forward, initialize, load, save
 from .providers import complete, parse_reply
 
 PAIRINGS = {
+    "astra-opus": (("Astra", "codex", "gpt-6-astra"), ("Opus 5.5", "claude", "claude-opus-5-5")),
     "astra-fable": (("Astra", "codex", "gpt-6-astra"), ("Fable", "claude", "fable")),
     "astra-kimi": (("Astra", "codex", "gpt-6-astra"), ("Kimi K3", "tinfoil", "kimi-k3")),
 }
@@ -72,19 +72,17 @@ Do not call tools. Do not submit or run source code. Do not train, compute gradi
 use an optimizer, or run an automated parameter search. Reason about the game and
 assign weights directly. You may change every weight and bias, including setting
 values to zero. For this demo, keep exactly the same layer sizes and activations:
-31 inputs -> 8 ReLU neurons -> 18 linear action scores. Largest score selects an
+33 inputs -> 8 ReLU neurons -> 18 linear action scores. Largest score selects an
 action; first index wins a tie. Matrices use [output neuron][input neuron].
 There is no recurrent memory. All actions must come from this network.
 The brief reason will be shown to the user. Explain the behavior you intend.
 Feedback includes each layer's pre-activation values, post-activation values,
 and all 18 action scores at sampled states for both original networks.
 The arena resolves both actions simultaneously. No first-player timing advantage
-is intended. Player 1 is the warrior; player 2 is the wizard. See rules below.
+is intended. Player 1 is Grimes; player 2 is Shoggoth. See rules below.
 
 INTERFACE
-{encode(arena.specification())}
-TRUSTED GAME SOURCE
-{inspect.getsource(arena)}
+{encode(arena.learning_specification())}
 YOUR CURRENT MODEL
 {encode(model)}
 SHARED GAME 1 FEEDBACK
@@ -92,7 +90,7 @@ SHARED GAME 1 FEEDBACK
 """
 
 
-def run_demo(output, seed=42, max_steps=1800, timeout=300, pairing="astra-fable"):
+def run_demo(output, seed=42, max_steps=1800, timeout=300, pairing="astra-opus"):
     if pairing not in PAIRINGS:
         raise ValueError("Unknown agent pairing.")
     agents = PAIRINGS[pairing]
@@ -105,7 +103,7 @@ def run_demo(output, seed=42, max_steps=1800, timeout=300, pairing="astra-fable"
                          for i, (name, provider, model_id) in enumerate(agents)]}
     publish(output / "demo.json", status)
     try:
-        initial = initialize([31, 8, 18], seed=seed)
+        initial = initialize([33, 8, 18], seed=seed)
         save(output / "initial.json", initial)
         status["initial_sha256"] = fingerprint(initial)
         status["before"] = match(output / "initial.json", output / "initial.json",
@@ -162,6 +160,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-steps", type=int, default=1800)
-    parser.add_argument("--pairing", choices=PAIRINGS, default="astra-fable")
+    parser.add_argument("--pairing", choices=PAIRINGS, default="astra-opus")
     args = parser.parse_args()
     print(encode(run_demo(args.output, args.seed, args.max_steps, pairing=args.pairing)))

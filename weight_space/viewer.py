@@ -12,7 +12,7 @@ import time
 
 import pygame
 
-from Street_Fighter.src.arena import FighterState, ANIMATION_STEPS
+from Street_Fighter.src.arena import FighterState, ANIMATION_STEPS, ending_states
 from Street_Fighter.src.fighter import Fighter
 from Street_Fighter.src.streaming import FramePublisher, StreamConfig
 from .tool_loop import game_directory
@@ -58,10 +58,10 @@ def main():
     assets = Path(__file__).resolve().parent.parent / "Street_Fighter/assets"
     background = pygame.transform.smoothscale(pygame.image.load(str(assets / "images/bg1.jpg")), (1000, 600))
     fonts = {size: pygame.font.Font(None, size) for size in (22, 26, 32, 44)}
-    fighters = [Fighter(FighterState(1, 200, 310, False), [162, 4, [72, 46]],
-                        pygame.image.load(str(assets / "images/warrior.png")).convert_alpha(), ANIMATION_STEPS[0], None),
-                Fighter(FighterState(2, 700, 310, True), [250, 3, [112, 97]],
-                        pygame.image.load(str(assets / "images/wizard.png")).convert_alpha(), ANIMATION_STEPS[1], None)]
+    fighters = [Fighter(FighterState(1, 200, 310, False), [500, 648 / 500, [144 * 500 / 324, 92 * 500 / 324]],
+                        pygame.image.load(str(assets / "images/grimes-sprites-large.png")).convert_alpha(), ANIMATION_STEPS[0], None),
+                Fighter(FighterState(2, 700, 310, True), [500, 1.5, [224, 194]],
+                        pygame.image.load(str(assets / "images/shoggoth-sprites-large.png")).convert_alpha(), ANIMATION_STEPS[1], None)]
     selected_game, edit_after = args.game, 1
     phase, frame, playing, speed = game_directory(selected_game), 0.0, not args.paused, 1.0
     if args.edits:
@@ -81,6 +81,11 @@ def main():
             cache[name] = {"manifest": read_json(directory / "manifest.json"),
                            "result": read_json(directory / "result.json"),
                            "frames": [read_json_line(line) for line in (directory / "steps.jsonl").read_text().splitlines()]}
+            frames = cache[name]["frames"]
+            ending = ending_states(frames[-1]["state"]) if frames else []
+            if ending:
+                frames[-1]["state"]["ending_complete"] = False
+                frames.extend({"state": state} for state in ending)
         return cache.get(name)
 
     running = True
@@ -142,7 +147,14 @@ def main():
             index = min(int(frame), len(rows))
             state = replay["manifest"]["initial_state"] if index == 0 else rows[index - 1]["state"]
             stage.blit(background, (0, 0))
-            for i, fighter in enumerate(fighters):
+            for cube in state.get("powerups", []):
+                if cube["available"]:
+                    color = (70,190,230) if cube["player"] == 1 else (215,115,230)
+                    rect = pygame.Rect(cube["x"],cube["y"],cube["size"],cube["size"])
+                    pygame.draw.rect(stage,color,rect)
+                    pygame.draw.rect(stage,(255,255,255),rect,2)
+            for i in (1, 0):
+                fighter = fighters[i]
                 fighter.state = FighterState(**state["fighters"][i])
                 fighter.draw(stage)
                 x = 24 if i == 0 else 666
@@ -150,7 +162,8 @@ def main():
                 pygame.draw.rect(stage, (70, 190, 230) if i == 0 else (215, 115, 230),
                                  (x, 52, 310 * fighter.health / 100, 20))
                 label(names[i].upper() if i < len(names) else f"PLAYER {i + 1}", x, 20, 32, surface=stage)
-                label(f"HP {fighter.health}", x, 78, 22, surface=stage)
+                damage = state["fighters"][i].get("damage_dealt")
+                label(f"HP {fighter.health}" + (f"   DMG {damage}" if damage is not None else ""), x, 78, 22, surface=stage)
             remaining = max(0, (state["max_steps"] - state["step"]) / 60)
             label(f"{remaining:04.1f}s", 450, 30, 32, surface=stage)
             screen.blit(stage, (0, 0))
@@ -159,7 +172,7 @@ def main():
                 revision = (selected_game - 1) // 2 if status.get("paired_games", True) else selected_game - 1
                 title = f"GAME {selected_game} | Revision {revision} | " + ("Swapped characters" if selected_game % 2 == 0 else "First assignment")
             label(title, 24, 620, 32)
-            if state["done"]:
+            if state["done"] and state.get("ending_complete", True):
                 winner = state["winner"]
                 outcome = "DRAW" if winner is None else names[winner - 1].upper() + " WINS"
                 label(f"{outcome} | {state['reason'].replace('_', ' ')}", 24, 658, 26)

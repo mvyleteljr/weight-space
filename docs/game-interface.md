@@ -8,13 +8,13 @@ matches use the same engine. Agent-written Python remains disabled.
 
 ```sh
 uv run python -m weight_space game-spec
-uv run python -m weight_space init workspaces/player-1.json --sizes 31 16 18 --seed 1
-uv run python -m weight_space init workspaces/player-2.json --sizes 31 16 18 --seed 2
+uv run python -m weight_space init workspaces/player-1.json --sizes 33 16 18 --seed 1
+uv run python -m weight_space init workspaces/player-2.json --sizes 33 16 18 --seed 2
 uv run python -m weight_space match workspaces/player-1.json workspaces/player-2.json --output runs/match-01
 ```
 
 `init` creates fresh weights. Edit the JSON to program a policy. The model must
-have 31 inputs and 18 outputs. The highest output selects the action. The first
+have 33 inputs and 18 outputs. The highest output selects the action. The first
 index wins a tie. Action ID zero selects idle. All other architecture rules remain
 in the [model contract](model-contract.md).
 
@@ -78,16 +78,31 @@ They turn toward each other after movement. Horizontal movement also works in
 the air. There is no block, guard, crouch, parry, dash, or invulnerability action.
 Defense requires avoiding the attack area through position and timing.
 
-Both attacks use the same area, which is 160 pixels wide and 180 pixels tall.
-The area starts at the fighter center and extends forward. Its top is at the
-fighter's body top. There is no separate low strike. A jump avoids a grounded
-attack only when the bodies no longer overlap vertically at the hit check.
-Starting a jump on the same step as a nearby attack does not provide immunity.
+All attacks use contact areas aligned with their sprite-sheet scale, anchor,
+and facing. Grimes attacks 1/2 (R/T) and Shoggoth attack 2 (L) are active on
+animation frames 4–5. Shoggoth attack 1 (K) remains active on frames 3–5.
+Grimes' blade hits require 2 horizontal and 4 vertical pixels of body overlap;
+Shoggoth's arm hits retain the firmer 12-horizontal/10-vertical threshold. Grimes' sword and Shoggoth's raised tentacles are excluded
+from hurt areas. Each swing can hit once; windup and recovery cannot hit.
+`attack_connected` records that a swing already landed. Damage and the target's
+hit-reaction animation occur on the same rendered frame. Hits interrupt an
+opponent's attack, except that simultaneous contact still damages both fighters.
+Attack balance:
 
-An attack checks for damage only on the step when it starts. The later attack
-animation does not repeat that check. Thus, an observed `attacking` flag describes
-an attack whose hit check has already occurred. The interface includes these
-rules so the editing agents do not have to infer them from action names.
+| Attack | Damage | Recovery after animation |
+| --- | ---: | ---: |
+| Grimes R (1) | 10 | 12 frames / 0.20 seconds |
+| Grimes T (2) | 12 | 18 frames / 0.30 seconds |
+| Shoggoth K (1) | 14 | 30 frames / 0.50 seconds |
+| Shoggoth L (2) | 18 | 42 frames / 0.70 seconds |
+
+Recovery blocks movement, jumping, and new attacks for the full listed number of
+simulation steps, on hits and misses alike. Gravity and landing still run. An
+interrupted attack starts its recovery when hit; finishing a hit reaction does
+not reset or remove the remaining recovery. Receiving a hit while idle does not
+add an attack recovery penalty. The observation retains `attack_cooldown/20` for
+compatibility; values can now exceed 1. Observation dimensions and action IDs
+are unchanged.
 
 ## Timing and game rules
 
@@ -103,8 +118,11 @@ The shared engine uses fixed timing and simultaneous hit resolution instead.
 Hit recovery blocks new inputs. Attack type remains set until recovery ends.
 
 A knockout ends the game immediately. At the time limit, the fighter with more
-health wins. Equal health is a draw. Player 1 is always the warrior and player 2
-is the wizard. Swap model sides in a match series to account for character and
+cumulative damage dealt wins. Equal damage is a draw, regardless of remaining HP.
+Each fighter's `damage_dealt` counts actual HP removed before healing, capped at
+the opponent's pre-hit HP; healing never subtracts points. It resets each game.
+The HUD shows `DMG` beside HP. The 33 network inputs are unchanged.
+Player 1 is always Grimes and player 2 is Shoggoth. Swap model sides to account for character and
 starting-position differences.
 
 ## Saved feedback
@@ -115,7 +133,7 @@ Each match writes:
 - `manifest.json`: interface specification, model hashes, initial state, and status.
 - `steps.jsonl`: pre-step observations, chosen actions, next observations, rewards,
   and complete post-step states.
-- `result.json`: the winner, end reason, final health, and number of steps.
+- `result.json`: the winner, end reason, final health, damage dealt, and number of steps.
 
 Action traces can be replayed through `Arena.step`. These records supply feedback
 for the next weight-edit round. The `run` command still drives the XOR proxy;
@@ -140,3 +158,39 @@ A display smoke test can run without opening a window:
 ```sh
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy uv run --no-project --python 3.13 --with-requirements Street_Fighter/docs/requirements.txt python Street_Fighter/src/main.py --smoke-test
 ```
+
+### Learning-agent information
+
+Both weight-editing modes expose all 18 actions, including separate attack 1
+(Grimes R / Shoggoth K) and attack 2 (Grimes T / Shoggoth L). Their prompts and
+`info` interface use `learning_specification()`, which omits combat tuning tables,
+exact damage/recovery rules, and game source. The full developer specification
+remains in match manifests for reproducibility, but is not sent to the agents.
+Recorded health changes, animation state, and current cooldown observations stay
+available so agents can infer attack behavior from gameplay. Existing observation
+normalization and network dimensions are unchanged. Start a fresh run to avoid
+carrying forward explanations learned under the old, fully disclosed interface.
+
+### Solid bodies and crossovers
+
+Grimes and Shoggoth now have stable solid body regions separate from attack
+hitboxes. Grounded fighters cannot pass through each other; landing overlap
+separates them, including at arena walls. Grimes renders in front of decorative
+tentacles in keyboard play and both replay viewers.
+
+Grimes jumps at -42 px/tick and moves at 14 px/tick in the air to clear Shoggoth's
+body. Shoggoth waits 12 ticks (0.2 seconds) before facing a crossed opponent and
+finishes an active attack before turning. Its forward punch (K / attack 1) applies
+knockback on confirmed contact only, clamped to stage boundaries. These rules
+are shared by human play and training; the agent-facing interface still omits
+combat tuning values.
+
+## One-use health cubes
+
+Grimes owns the cyan cube at the right edge; Shoggoth owns the purple cube at the
+left edge. Body contact restores health to 100 and consumes only the owner's cube,
+even if already at full health. No respawn until a new game. A knockout cannot
+collect a cube. Damage resolves before pickup; rewards still measure damage, not healing.
+Inputs 31/32 are self/opponent cube availability. Optional previous-action feedback
+moves to input 33. Existing 31-input policies must be reinitialized for new matches;
+archived game recordings remain viewable.

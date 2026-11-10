@@ -5,11 +5,22 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from weight_space.demo import check_revision, run_demo
+from weight_space.demo import check_revision, run_demo, edit_prompt
 from weight_space.network import forward, initialize, load
 
 
 class DemoTests(unittest.TestCase):
+    def test_legacy_prompt_does_not_disclose_source_or_balance(self):
+        from Street_Fighter.src import arena
+        model = initialize([33, 8, 18])
+        prompt = edit_prompt("test", 1, model, {})
+        with patch.dict(arena.ATTACK_BALANCE, {(2, 2): (99, 777)}):
+            self.assertEqual(prompt, edit_prompt("test", 1, model, {}))
+        self.assertNotIn("TRUSTED GAME SOURCE", prompt)
+        self.assertNotIn("ATTACK_BALANCE", prompt)
+        self.assertNotIn("recovery_frames", prompt)
+        self.assertIn("Shoggoth L", prompt)
+
     def test_same_initial_weights_independent_edits_and_rematch(self):
         prompts = []
 
@@ -44,9 +55,9 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(trace["outputs"], [1])
 
     def test_architecture_change_is_rejected(self):
-        before = initialize([31, 8, 18])
+        before = initialize([33, 8, 18])
         with self.assertRaises(ValueError):
-            check_revision(before, initialize([31, 4, 18]))
+            check_revision(before, initialize([33, 4, 18]))
         after = copy.deepcopy(before)
         after["layers"][0]["activation"] = "tanh"
         with self.assertRaises(ValueError):
